@@ -26,19 +26,20 @@ SOFTWARE.
 #define YASIO__UE4_HPP
 
 THIRD_PARTY_INCLUDES_START
-#  pragma push_macro("check")
-#  undef check
-#  define YASIO_HEADER_ONLY 1
+#pragma push_macro("check")
+#undef check
+#define YASIO_HEADER_ONLY 1
 /*
 UE4 builtin namespace 'UI' conflicit with openssl typedef strcut st_UI UI;
 ossl_typ.h(143): error C2365: 'UI': redefinition; previous definition was 'namespace'
 */
 // #define YASIO_HAVE_SSL 1
-#  include "yasio/yasio.hpp"
-#  include "yasio/obstream.hpp"
+#include "yasio/yasio.hpp"
+#include "yasio/obstream.hpp"
+#include "yasio/ibstream.hpp"
 using namespace yasio;
 using namespace yasio::inet;
-#  pragma pop_macro("check")
+#pragma pop_macro("check")
 THIRD_PARTY_INCLUDES_END
 
 #endif
