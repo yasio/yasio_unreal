@@ -3,12 +3,15 @@
 
 #include "YAsioTest.h"
 #include "yasio/bindings/yasio_ue4.hpp"
+
 DECLARE_LOG_CATEGORY_EXTERN(yasio_ue4, Log, All);
 DEFINE_LOG_CATEGORY(yasio_ue4);
 
 // Sets default values
 AYAsioTest::AYAsioTest()
 {
+    this->service = nullptr; // the yasio io_service
+
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -22,6 +25,19 @@ AYAsioTest::AYAsioTest()
         VisualMesh->SetStaticMesh(CubeVisualAsset.Object);
         VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
     }
+}
+
+AYAsioTest::~AYAsioTest()
+{
+    if (service) {
+        service->stop();
+        delete service;
+    }
+}
+
+void AYAsioTest::InitYAsio()
+{
+    if (service) return;
 
     yasio::inet::io_hostent endpoints[] = { {"soft.360.cn", 80} };
     service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
@@ -30,7 +46,7 @@ AYAsioTest::AYAsioTest()
         FString text(msg);
         const TCHAR* tstr = *text;
         UE_LOG(yasio_ue4, Log, L"%s", tstr);
-    }; 
+    };
     service->set_option(YOPT_S_PRINT_FN, &printfn);
     service->start([=](event_ptr&& event) {
         switch (event->kind())
@@ -74,17 +90,12 @@ AYAsioTest::AYAsioTest()
         });
 }
 
-AYAsioTest::~AYAsioTest()
-{
-    service->stop();
-    delete service;
-}
-
 // Called when the game starts or when spawned
 void AYAsioTest::BeginPlay()
 {
     Super::BeginPlay();
 
+    InitYAsio();
     service->open(0); // open http client
 }
 
