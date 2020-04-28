@@ -1,14 +1,14 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "YAsioTest.h"
+#include "YAsioActor.h"
 #include "yasio/bindings/yasio_ue4.hpp"
 
 DECLARE_LOG_CATEGORY_EXTERN(yasio_ue4, Log, All);
 DEFINE_LOG_CATEGORY(yasio_ue4);
 
 // Sets default values
-AYAsioTest::AYAsioTest()
+AYAsioActor::AYAsioActor()
 {
     this->service = nullptr; // the yasio io_service
 
@@ -27,7 +27,7 @@ AYAsioTest::AYAsioTest()
     }
 }
 
-AYAsioTest::~AYAsioTest()
+AYAsioActor::~AYAsioActor()
 {
     if (service) {
         service->stop();
@@ -35,19 +35,18 @@ AYAsioTest::~AYAsioTest()
     }
 }
 
-void AYAsioTest::InitYAsio()
+void AYAsioActor::InitYAsio()
 {
     if (service) return;
 
-    yasio::inet::io_hostent endpoints[] = { {"soft.360.cn", 80} };
-    service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
-
-    print_fn_t printfn = [](const char* msg) {
+    io_service::init_globals([](const char* msg) {
         FString text(msg);
         const TCHAR* tstr = *text;
         UE_LOG(yasio_ue4, Log, L"%s", tstr);
-    };
-    service->set_option(YOPT_S_PRINT_FN, &printfn);
+    });
+	
+    yasio::inet::io_hostent endpoints[] = { {"soft.360.cn", 80} };
+    service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
     service->start([=](event_ptr&& event) {
         switch (event->kind())
         {
@@ -91,7 +90,7 @@ void AYAsioTest::InitYAsio()
 }
 
 // Called when the game starts or when spawned
-void AYAsioTest::BeginPlay()
+void AYAsioActor::BeginPlay()
 {
     Super::BeginPlay();
 
@@ -100,7 +99,7 @@ void AYAsioTest::BeginPlay()
 }
 
 // Called every frame
-void AYAsioTest::Tick(float DeltaTime)
+void AYAsioActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 

@@ -10,7 +10,7 @@
  * 
  */
 UCLASS()
-class DUMMY3D_API ADemoUE4GameModeBase : public AGameModeBase
+class DEMOUE4_API ADemoUE4GameModeBase : public AGameModeBase
 {
 	GENERATED_BODY()
 	

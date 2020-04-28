@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "YAsioTest.generated.h"
+#include "YAsioActor.generated.h"
 
 namespace yasio {
 	namespace inet {
@@ -13,7 +13,7 @@ namespace yasio {
 }
 
 UCLASS()
-class DUMMY3D_API AYAsioTest : public AActor
+class DEMOUE4_API AYAsioActor : public AActor
 {
 	GENERATED_BODY()
 	
@@ -23,8 +23,8 @@ class DUMMY3D_API AYAsioTest : public AActor
 	yasio::inet::io_service* service;
 public:	
 	// Sets default values for this actor's properties
-	AYAsioTest();
-    ~AYAsioTest();
+	AYAsioActor();
+    ~AYAsioActor();
 
 protected:
 	// Called when the game starts or when spawned
