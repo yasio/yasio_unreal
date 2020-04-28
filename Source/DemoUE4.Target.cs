@@ -3,12 +3,12 @@
 using UnrealBuildTool;
 using System.Collections.Generic;
 
-public class dummy3dTarget : TargetRules
+public class DemoUE4Target : TargetRules
 {
-	public dummy3dTarget( TargetInfo Target) : base(Target)
+	public DemoUE4Target( TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Game;
 		DefaultBuildSettings = BuildSettingsVersion.V2;
-		ExtraModuleNames.AddRange( new string[] { "dummy3d" } );
+		ExtraModuleNames.AddRange( new string[] { "DemoUE4" } );
 	}
 }

@@ -4,13 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
-#include "dummy3dGameModeBase.generated.h"
+#include "DemoUE4GameModeBase.generated.h"
 
 /**
  * 
  */
 UCLASS()
-class DUMMY3D_API Adummy3dGameModeBase : public AGameModeBase
+class DUMMY3D_API ADemoUE4GameModeBase : public AGameModeBase
 {
 	GENERATED_BODY()
 	

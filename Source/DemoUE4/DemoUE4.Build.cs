@@ -3,13 +3,13 @@
 using System.IO;
 using UnrealBuildTool;
 
-public class dummy3d : ModuleRules
+public class DemoUE4 : ModuleRules
 {
 	private string ThirdPartyPath
 	{
 		get { return Path.GetFullPath(Path.Combine(ModuleDirectory, "../../ThirdParty/")); }
 	}
-	public dummy3d(ReadOnlyTargetRules Target) : base(Target)
+	public DemoUE4(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
