@@ -605,7 +605,7 @@ protected:
   std::function<int(const void*, int, const ip::endpoint*)> write_cb_;
   std::function<int(void*, int)> read_cb_;
 
-  concurrency::concurrent_queue<io_send_op_ptr> send_queue_;
+  privacy::concurrent_queue<io_send_op_ptr> send_queue_;
 
   // mark whether pollout event registerred.
   bool pollout_registerred_ = false;
@@ -753,7 +753,7 @@ public:
   **   b.this function only works once
   **   c. you should call once before call any 'io_servic::start'
   */
-  static void init_globals(const yasio::inet::print_fn_t&);
+  YASIO__DECL static void init_globals(const yasio::inet::print_fn_t&);
 
   /*
   ** Summary: cleanup necessary global state data, such custom print function.
@@ -763,7 +763,8 @@ public:
   **      custom print function.
   **   c. you should ensure there no any io_service running whe call this function
   */
-  static void cleanup_globals();
+  YASIO__DECL static void cleanup_globals();
+
 public:
   YASIO__DECL io_service();
   YASIO__DECL io_service(int channel_count);
@@ -989,7 +990,7 @@ private:
   std::thread worker_;
   std::thread::id worker_id_;
 
-  concurrency::concurrent_queue<event_ptr, true> events_;
+  privacy::concurrent_queue<event_ptr, true> events_;
 
   std::vector<io_channel*> channels_;
 
