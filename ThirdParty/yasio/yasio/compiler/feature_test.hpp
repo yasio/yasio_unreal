@@ -44,8 +44,19 @@ SOFTWARE.
 #  define YASIO__HAS_FULL_CXX11 1
 #endif
 
-// Tests whether compiler has fully c++17 support
-#if (defined(__cplusplus) && __cplusplus == 201703L) ||                                            \
+// Tests whether compiler has c++14 support
+#if (defined(__cplusplus) && __cplusplus >= 201402L) ||                                            \
+    (defined(_MSC_VER) && _MSC_VER >= 1900 && (defined(_MSVC_LANG) && (_MSVC_LANG >= 201402L)))
+#  ifndef YASIO_HAS_CXX14
+#    define YASIO__HAS_CXX14 1
+#  endif // C++14 features macro
+#endif   // C++14 features check
+#if !defined(YASIO__HAS_CXX14)
+#  define YASIO__HAS_CXX14 0
+#endif
+
+// Tests whether compiler has c++17 support
+#if (defined(__cplusplus) && __cplusplus >= 201703L) ||                                            \
     (defined(_MSC_VER) && _MSC_VER > 1900 &&                                                       \
      ((defined(_HAS_CXX17) && _HAS_CXX17 == 1) ||                                                  \
       (defined(_MSVC_LANG) && (_MSVC_LANG > 201402L))))
@@ -53,9 +64,21 @@ SOFTWARE.
 #    define YASIO__HAS_CXX17 1
 #  endif // C++17 features macro
 #endif   // C++17 features check
-
 #if !defined(YASIO__HAS_CXX17)
 #  define YASIO__HAS_CXX17 0
+#endif
+
+// Tests whether compiler has c++20 support
+#if (defined(__cplusplus) && __cplusplus > 201703L) ||                                             \
+    (defined(_MSC_VER) && _MSC_VER > 1900 &&                                                       \
+     ((defined(_HAS_CXX20) && _HAS_CXX20 == 1) ||                                                  \
+      (defined(_MSVC_LANG) && (_MSVC_LANG > 201703L))))
+#  ifndef YASIO__HAS_CXX20
+#    define YASIO__HAS_CXX20 1
+#  endif // C++20 features macro
+#endif   // C++20 features check
+#if !defined(YASIO__HAS_CXX20)
+#  define YASIO__HAS_CXX20 0
 #endif
 
 // Workaround for compiler without fully c++11 support, such as vs2013

@@ -144,13 +144,16 @@ int yasio__ares_init_android()
     obj_cls     = nullptr;
   } while (false);
 
-  if (env->ExceptionOccurred())
-    env->ExceptionClear();
+  if (env != nullptr)
+  {
+    if (env->ExceptionOccurred())
+      env->ExceptionClear();
 
-  if (app_context != nullptr)
-    env->DeleteLocalRef(app_context);
-  if (obj_cls != nullptr)
-    env->DeleteLocalRef(obj_cls);
+    if (app_context != nullptr)
+      env->DeleteLocalRef(app_context);
+    if (obj_cls != nullptr)
+      env->DeleteLocalRef(obj_cls);
+  }
 
   if (need_detatch)
     yasio__jvm->DetachCurrentThread();
@@ -176,14 +179,14 @@ int yasio__jni_onload(void* vm, void* reserved)
     }
   }
 
-  if (env->ExceptionOccurred())
+  if (env != nullptr && env->ExceptionOccurred())
     env->ExceptionClear();
 
   ::ares_library_init_jvm(yasio__jvm);
   return JNI_VERSION_1_6;
 }
 #  if defined(YASIO_BUILD_AS_SHARED)
-jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) { yasio__jni_onload(vm, reserved); }
+jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) { return yasio__jni_onload(vm, reserved); }
 #  endif
 }
 #endif
