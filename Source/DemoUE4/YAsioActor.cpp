@@ -39,14 +39,16 @@ void AYAsioActor::InitYAsio()
 {
     if (service) return;
 
-    io_service::init_globals([](const char* msg) {
+    print_fn_t log_cb = [](const char* msg) {
         FString text(msg);
         const TCHAR* tstr = *text;
         UE_LOG(yasio_ue4, Log, L"%s", tstr);
-    });
+    };
+    io_service::init_globals(log_cb);
 	
     yasio::inet::io_hostent endpoints[] = { {"soft.360.cn", 80} };
     service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
+    service->set_option(YOPT_S_PRINT_FN, &log_cb);
     service->start([=](event_ptr&& event) {
         switch (event->kind())
         {
