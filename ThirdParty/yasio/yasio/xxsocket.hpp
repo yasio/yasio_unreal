@@ -369,6 +369,17 @@ YASIO__NS_INLINE namespace ip
   YASIO__DECL int inet_pton(int af, const char* src, void* dst);
   } // namespace compat
 
+  // the saddr to string helper function
+  inline static std::string saddr_to_string(int af, const void* saddr)
+  {
+    std::string ipstring(64, '\0');
+
+    auto str = compat::inet_ntop(af, saddr, &ipstring.front(), 64);
+    ipstring.resize(str ? strlen(str) : 0);
+
+    return ipstring;
+  }
+
   union endpoint
   {
   public:
@@ -475,17 +486,8 @@ YASIO__NS_INLINE namespace ip
     }
     std::string ip() const
     {
-      return ip(sa_.sa_family,
-                sa_.sa_family == AF_INET ? (void*)&in4_.sin_addr : (void*)&in6_.sin6_addr);
-    }
-    static std::string ip(int af, const void* src)
-    {
-      std::string ipstring(64, '\0');
-
-      size_t n = strlen(compat::inet_ntop(af, src, &ipstring.front(), 64));
-      ipstring.resize(n);
-
-      return ipstring;
+      return saddr_to_string(sa_.sa_family, sa_.sa_family == AF_INET ? (void*)&in4_.sin_addr
+                                                                     : (void*)&in6_.sin6_addr);
     }
     /*
      %N: s_net
@@ -726,6 +728,12 @@ public:
   */
   YASIO__DECL int connect_n(const endpoint& ep);
   YASIO__DECL static int connect_n(socket_native_type s, const endpoint& ep);
+
+  /* @brief: Disconnect a connectionless socket (such as SOCK_DGRAM)
+  **
+  */
+  YASIO__DECL int disconnect();
+  YASIO__DECL static int disconnect(socket_native_type s);
 
   /* @brief: nonblock send
    ** @params: omit

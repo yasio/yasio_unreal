@@ -200,13 +200,19 @@ enum
   // params: index:int
   YOPT_C_DISABLE_MCAST,
 
-  // Bind the unconnected UDP transport, once bind, can't be unbind.
+  // Change 4-tuple association for io_transport_udp
   // params: transport:transport_handle_t
-  YOPT_T_BIND_UDP,
+  // remark: only works for udp client transport
+  YOPT_T_CONNECT,
+
+  // Dissolve 4-tuple association for io_transport_udp
+  // params: transport:transport_handle_t
+  // remark: only works for udp client transport
+  YOPT_T_DISCONNECT,
 
   // Sets io_base sockopt
   // params: io_base*,level:int,optname:int,optval:int,optlen:int
-  YOPT_SOCKOPT = 201,
+  YOPT_B_SOCKOPT = 201,
 };
 
 // channel masks: only for internal use, not for user
@@ -515,7 +521,7 @@ public:
   std::vector<char> buffer_; // sending data buffer
   io_completion_cb_t handler_;
 
-  YASIO__DECL virtual int perform(io_transport* transport, const void* buf, int n);
+  YASIO__DECL virtual int perform(transport_handle_t transport, const void* buf, int n);
 
 #if !defined(YASIO_DISABLE_OBJECT_POOL)
   DEFINE_CONCURRENT_OBJECT_POOL_ALLOCATION(io_send_op, 512)
@@ -530,7 +536,7 @@ public:
       : io_send_op(std::move(buffer), std::move(handler)), destination_(destination)
   {}
 
-  YASIO__DECL int perform(io_transport* transport, const void* buf, int n) override;
+  YASIO__DECL int perform(transport_handle_t transport, const void* buf, int n) override;
 #if !defined(YASIO_DISABLE_OBJECT_POOL)
   DEFINE_CONCURRENT_OBJECT_POOL_ALLOCATION(io_sendto_op, 512)
 #endif
@@ -550,8 +556,9 @@ public:
   virtual ip::endpoint remote_endpoint() const { return socket_->peer_endpoint(); }
 
   io_channel* get_context() const { return ctx_; }
+  int cindex() const { return ctx_->index_; }
 
-  virtual ~io_transport() {}
+  virtual ~io_transport() { send_queue_.clear(); }
 
 protected:
   io_service& get_service() const { return ctx_->get_service(); }
@@ -574,7 +581,7 @@ protected:
 
   YASIO__DECL int call_read(void* data, int size, int& error);
   YASIO__DECL int call_write(io_send_op*, int& error);
-  YASIO__DECL int complete_op(io_send_op*, int error, size_t bytes_transferred);
+  YASIO__DECL void complete_op(io_send_op*, int error);
 
   // Call at io_service
   YASIO__DECL virtual int do_read(int& error);
@@ -600,7 +607,7 @@ protected:
 
   io_channel* ctx_;
 
-  std::function<int(const void*, int, const ip::endpoint*)> write_cb_;
+  std::function<int(const void*, int)> write_cb_;
   std::function<int(void*, int)> read_cb_;
 
   privacy::concurrent_queue<io_send_op_ptr> send_queue_;
@@ -648,9 +655,8 @@ public:
   YASIO__DECL ip::endpoint remote_endpoint() const override;
 
 protected:
-  // perform connect to establish 4 tuple with peer
-  // BSD UDP socket, once bind 4-tuple with 'connect', can't be unbind
   YASIO__DECL int connect();
+  YASIO__DECL int disconnect();
 
   YASIO__DECL int write(std::vector<char>&&, io_completion_cb_t&&) override;
   YASIO__DECL int write_to(std::vector<char>&&, const ip::endpoint&, io_completion_cb_t&&) override;
@@ -662,6 +668,9 @@ protected:
 
   // configure remote with specific endpoint
   YASIO__DECL int confgure_remote(const ip::endpoint& peer);
+
+  // process received data from low level
+  YASIO__DECL virtual int handle_read(const char* buf, int bytes_transferred, int& error);
 
   ip::endpoint peer_;                // for recv only
   mutable ip::endpoint destination_; // for sendto only
@@ -677,8 +686,13 @@ public:
 
 protected:
   YASIO__DECL int write(std::vector<char>&&, io_completion_cb_t&&) override;
+
   YASIO__DECL int do_read(int& error) override;
   YASIO__DECL bool do_write(long long& max_wait_duration) override;
+
+  YASIO__DECL int handle_read(const char* buf, int len, int& error) override;
+
+  std::vector<char> rawbuf_; // the low level raw buffer
   ikcpcb* kcp_;
   std::recursive_mutex send_mtx_;
 };
@@ -782,21 +796,17 @@ public:
   YASIO__DECL void set_option_internal(int opt, va_list args);
 
   // open a channel, default: YCK_TCP_CLIENT
-  YASIO__DECL void open(size_t cindex, int kind = YCK_TCP_CLIENT);
+  YASIO__DECL void open(size_t index, int kind = YCK_TCP_CLIENT);
 
   // check whether the channel is open
-  YASIO__DECL bool is_open(int cindex) const;
-
+  YASIO__DECL bool is_open(int index) const;
   // check whether the transport is open
   YASIO__DECL bool is_open(transport_handle_t) const;
 
-  YASIO__DECL void reopen(transport_handle_t);
-
   // close transport
   YASIO__DECL void close(transport_handle_t);
-
   // close channel
-  YASIO__DECL void close(int cindex);
+  YASIO__DECL void close(int index);
 
   /*
   ** Summary: Write data to a TCP or connected UDP transport with last peer address
@@ -842,10 +852,10 @@ public:
                                  unsigned short port = 0);
 
   YASIO_OBSOLETE_DEPRECATE(io_service::channel_at)
-  io_channel* cindex_to_handle(size_t cindex) const { return channel_at(cindex); }
+  io_channel* cindex_to_handle(size_t index) const { return channel_at(index); }
 
   // Gets channel by index
-  YASIO__DECL io_channel* channel_at(size_t cindex) const;
+  YASIO__DECL io_channel* channel_at(size_t index) const;
 
 private:
   YASIO__DECL void schedule_timer(highp_timer*, timer_cb_t&&);
@@ -970,7 +980,7 @@ private:
   /*
   ** Summary: For udp-server only, make dgram handle to communicate with client
   */
-  YASIO__DECL transport_handle_t do_dgram_accept(io_channel*, const ip::endpoint& peer);
+  YASIO__DECL transport_handle_t do_dgram_accept(io_channel*, const ip::endpoint& peer, int& error);
 
   int local_address_family() const { return ((ipsv_ & ipsv_ipv4) || !ipsv_) ? AF_INET : AF_INET6; }
 
