@@ -548,6 +548,9 @@ class io_transport : public io_base
   friend class io_service;
   friend class io_send_op;
   friend class io_sendto_op;
+  friend class io_event;
+
+  io_transport(const io_transport&) = delete;
 
 public:
   unsigned int id() const { return id_; }
@@ -584,7 +587,7 @@ protected:
   YASIO__DECL void complete_op(io_send_op*, int error);
 
   // Call at io_service
-  YASIO__DECL virtual int do_read(int& error);
+  YASIO__DECL virtual int do_read(int revent, int& error);
 
   // Call at io_service, try flush pending packet
   YASIO__DECL virtual bool do_write(long long& max_wait_duration);
@@ -614,14 +617,15 @@ protected:
 
   // mark whether pollout event registerred.
   bool pollout_registerred_ = false;
-
-public:
+#if !defined(YASIO_MINIFY_EVENT)
+private:
   // The user data
   union
   {
     void* ptr;
     int ival;
   } ud_;
+#endif
 };
 
 class io_transport_tcp : public io_transport
@@ -687,7 +691,7 @@ public:
 protected:
   YASIO__DECL int write(std::vector<char>&&, io_completion_cb_t&&) override;
 
-  YASIO__DECL int do_read(int& error) override;
+  YASIO__DECL int do_read(int revent, int& error) override;
   YASIO__DECL bool do_write(long long& max_wait_duration) override;
 
   YASIO__DECL int handle_read(const char* buf, int len, int& error) override;
@@ -701,17 +705,37 @@ protected:
 class io_event final
 {
 public:
-  io_event(int cindex, int kind, int error, transport_handle_t transport)
-      : timestamp_(highp_clock()), cindex_(cindex), kind_(kind), status_(error),
-        transport_(std::move(transport))
+  io_event(int cindex, int kind, int error)
+      : cindex_(cindex), kind_(kind), status_(error), transport_(nullptr), packet_({})
+#if !defined(YASIO_MINIFY_EVENT)
+        ,
+        timestamp_(highp_clock()), transport_udata_(nullptr), transport_id_(-1)
+#endif
   {}
-  io_event(int cindex, int type, std::vector<char> packet, transport_handle_t transport)
-      : timestamp_(highp_clock()), cindex_(cindex), kind_(type), status_(0),
-        transport_(std::move(transport)), packet_(std::move(packet))
+  io_event(int cindex, int kind, int error, transport_handle_t transport)
+      : cindex_(cindex), kind_(kind), status_(error), transport_(transport), packet_({})
+#if !defined(YASIO_MINIFY_EVENT)
+        ,
+        timestamp_(highp_clock()), transport_udata_(transport->ud_.ptr),
+        transport_id_(transport->id_)
+#endif
+  {}
+  io_event(int cindex, int kind, transport_handle_t transport, std::vector<char> packet)
+      : cindex_(cindex), kind_(kind), status_(0), transport_(transport), packet_(std::move(packet))
+#if !defined(YASIO_MINIFY_EVENT)
+        ,
+        timestamp_(highp_clock()), transport_udata_(transport->ud_.ptr),
+        transport_id_(transport->id_)
+#endif
   {}
   io_event(io_event&& rhs)
-      : timestamp_(rhs.timestamp_), cindex_(rhs.cindex_), kind_(rhs.kind_), status_(rhs.status_),
-        transport_(std::move(rhs.transport_)), packet_(std::move(rhs.packet_))
+      : cindex_(rhs.cindex_), kind_(rhs.kind_), status_(rhs.status_), transport_(rhs.transport_),
+        packet_(std::move(rhs.packet_))
+#if !defined(YASIO_MINIFY_EVENT)
+        ,
+        timestamp_(rhs.timestamp_), transport_udata_(rhs.transport_udata_),
+        transport_id_(rhs.transport_id_)
+#endif
   {}
 
   ~io_event() {}
@@ -725,19 +749,41 @@ public:
 
   transport_handle_t transport() const { return transport_; }
 
+#if !defined(YASIO_MINIFY_EVENT)
+  /* Gets to transport user data when process this event */
+  template <typename _Uty = void*> _Uty transport_udata() const
+  {
+    return (_Uty)(uintptr_t)transport_udata_;
+  }
+
+  /* Sets trasnport user data when process this event */
+  template <typename _Uty = void*> void transport_udata(_Uty uval)
+  {
+    transport_udata_ = (void*)uval;
+    if (transport_)
+      transport_->ud_.ptr = (void*)uval;
+  }
+
+  unsigned int transport_id() const { return transport_id_; }
+
   long long timestamp() const { return timestamp_; }
+#endif
 
 #if !defined(YASIO_DISABLE_OBJECT_POOL)
   DEFINE_CONCURRENT_OBJECT_POOL_ALLOCATION(io_event, 512)
 #endif
 
 private:
-  long long timestamp_;
   int cindex_;
   int kind_;
   int status_;
   transport_handle_t transport_;
   std::vector<char> packet_;
+#if !defined(YASIO_MINIFY_EVENT)
+  long long timestamp_;
+  void* transport_udata_;
+  unsigned int transport_id_;
+#endif
 };
 
 class io_service // lgtm [cpp/class-many-fields]
@@ -848,8 +894,15 @@ public:
   // The highp_timer support, !important, the callback is called on the thread of io_service
   YASIO__DECL highp_timer_ptr schedule(const std::chrono::microseconds& duration, timer_cb_t);
 
+  YASIO_OBSOLETE_DEPRECATE(io_service::resolve)
   YASIO__DECL int builtin_resolv(std::vector<ip::endpoint>& endpoints, const char* hostname,
-                                 unsigned short port = 0);
+                                 unsigned short port = 0)
+  {
+    return this->resolve(endpoints, hostname, port);
+  }
+
+  YASIO__DECL int resolve(std::vector<ip::endpoint>& endpoints, const char* hostname,
+                          unsigned short port = 0);
 
   YASIO_OBSOLETE_DEPRECATE(io_service::channel_at)
   io_channel* cindex_to_handle(size_t index) const { return channel_at(index); }

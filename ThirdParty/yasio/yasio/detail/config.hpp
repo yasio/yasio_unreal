@@ -93,6 +93,17 @@ SOFTWARE.
 #endif
 
 /*
+** Uncomment or add compiler flag -DYASIO_NT_COMPAT_GAI for earlier versions of Windows XP
+** see: https://docs.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-getaddrinfo
+*/
+// #define YASIO_NT_COMPAT_GAI 1
+
+/*
+** Uncomment or add compiler flag -DYASIO_MINIFY_EVENT to minfy size of io_event 
+*/
+// #define YASIO_MINIFY_EVENT 1
+
+/*
 ** Uncomment or add compiler flag -DYASIO_NO_EXCEPTIONS to disable exceptions
 */
 // #define YASIO_NO_EXCEPTIONS 1
@@ -147,7 +158,7 @@ SOFTWARE.
 /*
 **  The yasio version macros
 */
-#define YASIO_VERSION_NUM 0x033300
+#define YASIO_VERSION_NUM 0x033301
 
 /*
 ** The macros used by io_service.
