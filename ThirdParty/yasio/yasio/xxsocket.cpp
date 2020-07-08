@@ -713,7 +713,7 @@ void xxsocket::traverse_local_address(std::function<bool(const ip::endpoint&)> h
   {
     for (auto aip = ailist; aip != NULL; aip = aip->ai_next)
     {
-      ::memcpy(&ep, aip->ai_addr, aip->ai_addrlen);
+      ep.assign(aip);
 
       YASIO_LOGV("xxsocket::traverse_local_address: ip=%s", ep.ip().c_str());
       switch (ep.af())
@@ -1359,6 +1359,46 @@ void xxsocket::close(void)
     ::closesocket(this->fd);
     this->fd = invalid_socket;
   }
+}
+
+uint32_t xxsocket::tcp_rtt() const { return xxsocket::tcp_rtt(this->fd); }
+uint32_t xxsocket::tcp_rtt(socket_native_type s)
+{
+#if defined(_WIN32)
+#  if defined(NTDDI_WIN10_RS2) && NTDDI_VERSION >= NTDDI_WIN10_RS2
+  TCP_INFO_v0 info;
+  DWORD tcpi_ver = 0, bytes_transferred = 0;
+  int status = WSAIoctl(s, SIO_TCP_INFO,
+                        (LPVOID)&tcpi_ver, // lpvInBuffer pointer to a DWORD, version of tcp info
+                        (DWORD)sizeof(tcpi_ver),     // size, in bytes, of the input buffer
+                        (LPVOID)&info,               // pointer to a TCP_INFO_v0 structure
+                        (DWORD)sizeof(info),         // size of the output buffer
+                        (LPDWORD)&bytes_transferred, // number of bytes returned
+                        (LPWSAOVERLAPPED) nullptr,   // OVERLAPPED structure
+                        (LPWSAOVERLAPPED_COMPLETION_ROUTINE) nullptr);
+  /*
+  info.RttUs: The current estimated round-trip time for the connection, in microseconds.
+  info.MinRttUs: The minimum sampled round trip time, in microseconds.
+  */
+  if (status == 0)
+    return info.RttUs;
+#  endif
+#elif defined(__linux__)
+  struct tcp_info info;
+  int length = sizeof(struct tcp_info);
+  if (0 == xxsocket::get_optval(s, IPPROTO_TCP, TCP_INFO, info))
+    return info.tcpi_rtt;
+#elif defined(__APPLE__)
+  struct tcp_connection_info info;
+  int length = sizeof(struct tcp_connection_info);
+  /*
+  info.tcpi_srtt: average RTT in ms
+  info.tcpi_rttcur: most recent RTT in ms
+  */
+  if (0 == xxsocket::get_optval(s, IPPROTO_TCP, TCP_CONNECTION_INFO, info))
+    return info.tcpi_srtt * std::milli::den;
+#endif
+  return 0;
 }
 
 void xxsocket::init_ws32_lib(void) {}

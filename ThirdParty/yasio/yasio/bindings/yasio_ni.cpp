@@ -127,6 +127,7 @@ YASIO_NI_API void yasio_set_option(int opt, const char* pszArgs)
     case YOPT_S_CONNECT_TIMEOUT:
     case YOPT_S_DNS_CACHE_TIMEOUT:
     case YOPT_S_DNS_QUERIES_TIMEOUT:
+    case YOPT_S_DNS_DIRTY:
       service->set_option(opt, atoi(pszArgs));
       return;
   }
@@ -195,6 +196,11 @@ YASIO_NI_API int yasio_write(intptr_t thandle, const unsigned char* bytes, int l
   std::vector<char> buf(bytes, bytes + len);
   auto p = reinterpret_cast<transport_handle_t>(thandle);
   return yasio_shared_service()->write(p, std::move(buf));
+}
+YASIO_NI_API uint32_t yasio_tcp_rtt(intptr_t thandle)
+{
+  auto p = reinterpret_cast<transport_handle_t>(thandle);
+  return io_service::tcp_rtt(p);
 }
 YASIO_NI_API void yasio_dispatch(int count) { yasio_shared_service()->dispatch(count); }
 YASIO_NI_API void yasio_stop() { yasio_shared_service()->stop(); }

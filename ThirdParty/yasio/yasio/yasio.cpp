@@ -48,12 +48,7 @@ SOFTWARE.
 #include <fcntl.h>
 
 #if defined(YASIO_HAVE_SSL)
-#  include <openssl/bio.h>
-#  include <openssl/ssl.h>
-#  include <openssl/err.h>
-#  if OPENSSL_VERSION_NUMBER >= 0x10101000L
-#    define YASIO_HAVE_SSL_CTX_SET_POST_HANDSHAKE_AUTH
-#  endif
+#  include "yasio/detail/ssl.hpp"
 #endif
 
 #if defined(YASIO_HAVE_KCP)
@@ -61,12 +56,7 @@ SOFTWARE.
 #endif
 
 #if defined(YASIO_HAVE_CARES)
-extern "C" {
-#  include "c-ares/ares.h"
-#  if defined(__ANDROID__)
-extern int yasio__ares_init_android(); // implemented at 'yasio/bindings/yasio_jni.cpp'
-#  endif
-}
+#  include "yasio/detail/ares.hpp"
 #endif
 
 #define YASIO_KLOG_CP(custom_print, format, ...)                                                   \
@@ -250,6 +240,7 @@ struct yasio__global_state
       ::ares_library_cleanup();
 #endif
   }
+
   int init_flags = 0;
   int max_alloc_size;
 };
@@ -466,20 +457,27 @@ bool io_transport::do_write(long long& max_wait_duration)
       }
     }
 
-    if (error != EWOULDBLOCK && error != EAGAIN && error != ENOBUFS)
-    { // If still have work to do and kernel buffer not full
-      if (!send_queue_.empty())
-        max_wait_duration = 0;
-      if (pollout_registerred_)
-      {
-        pollout_registerred_ = false;
-        get_service().unregister_descriptor(socket_->native_handle(), YEM_POLLOUT);
+    bool no_wevent = send_queue_.empty();
+    if (no_wevent)
+      ; // do nothing
+    else
+    { // still have work to do
+      no_wevent = (error != EWOULDBLOCK && error != EAGAIN && error != ENOBUFS);
+      if (!no_wevent)
+      { // system kernel buffer full
+        if (!pollout_registerred_)
+        {
+          get_service().register_descriptor(socket_->native_handle(), YEM_POLLOUT);
+          pollout_registerred_ = true;
+        }
       }
+      else
+        max_wait_duration = 0;
     }
-    else if (!pollout_registerred_)
+    if (no_wevent && pollout_registerred_)
     {
-      pollout_registerred_ = true;
-      get_service().register_descriptor(socket_->native_handle(), YEM_POLLOUT);
+      get_service().unregister_descriptor(socket_->native_handle(), YEM_POLLOUT);
+      pollout_registerred_ = false;
     }
     ret = true;
   } while (false);
@@ -861,7 +859,7 @@ void io_service::init(const io_hostent* channel_eps, int channel_count)
   this->max_nfds_ = 0;
 
   options_.resolv_ = [=](std::vector<ip::endpoint>& eps, const char* host, unsigned short port) {
-    return this->builtin_resolv(eps, host, port);
+    return this->resolve(eps, host, port);
   };
 
   register_descriptor(interrupter_.read_descriptor(), YEM_POLLIN);
@@ -1129,6 +1127,12 @@ void io_service::open(size_t index, int kind)
 
     open_internal(ctx);
   }
+}
+uint32_t io_service::tcp_rtt(transport_handle_t transport)
+{
+  if (transport->is_open())
+    return transport->socket_->tcp_rtt();
+  return 0;
 }
 io_channel* io_service::channel_at(size_t index) const
 {
@@ -1414,7 +1418,7 @@ void io_service::do_ssl_handshake(io_channel* ctx)
       ; // Nothing need to do
     else
     {
-      int error = ERR_get_error();
+      int error = static_cast<int>(ERR_get_error());
       if (error)
       {
         char errstring[256] = {0};
@@ -1501,54 +1505,82 @@ void io_service::init_ares_channel()
   ares_options options = {};
   options.timeout      = static_cast<int>(this->options_.dns_queries_timeout_ / std::micro::den);
   options.tries        = this->options_.dns_queries_tries_;
-  auto status          = ::ares_init_options(&ares_, &options,
-                                    ARES_OPT_TIMEOUTMS | ARES_OPT_TRIES /* | ARES_OPT_LOOKUPS*/);
+  int status           = ::ares_init_options(&ares_, &options,
+                                   ARES_OPT_TIMEOUTMS | ARES_OPT_TRIES /* | ARES_OPT_LOOKUPS*/);
   if (status == ARES_SUCCESS)
   {
     YASIO_KLOG("[c-ares] init channel succeed");
-
-    // list all dns servers for resov problem diagnosis
-    ares_addr_node* name_servers = nullptr;
-    int ares_ec                  = 0;
-    if ((ares_ec = ::ares_get_servers(ares_, &name_servers)) == ARES_SUCCESS)
-    {
-      std::string strdns;
-      int valid_flags = 0;
-      for (auto name_server = name_servers; name_server != nullptr; name_server = name_server->next)
-      {
-        switch (name_server->family)
-        {
-          case AF_INET:
-            if (!IN4_IS_ADDR_LOOPBACK((in_addr*)&name_server->addr) &&
-                !IN4_IS_ADDR_LINKLOCAL((in_addr*)&name_server->addr))
-              yasio__setbits(valid_flags, ipsv_ipv4);
-            break;
-          case AF_INET6:
-            if (IN6_IS_ADDR_GLOBAL((in6_addr*)&name_server->addr))
-              yasio__setbits(valid_flags, ipsv_ipv6);
-            break;
-        }
-        strdns += yasio::inet::saddr_to_string(name_server->family, &name_server->addr);
-        strdns.push_back(',');
-      }
-      if (valid_flags) // if no valid name server, use predefined fallback dns
-        YASIO_KLOG("[c-ares] use system dns: %s", strdns.c_str());
-      else
-      {
-        ares_ec = ::ares_set_servers_csv(ares_, YASIO_CARES_FALLBACK_DNS);
-        if (ares_ec == 0)
-          YASIO_KLOG("[c-ares] get system dns failed, set fallback dns: '%s' succeed",
-                     YASIO_CARES_FALLBACK_DNS);
-        else
-          YASIO_KLOG("[c-ares] get system dns failed, set fallback dns: '%s' failed, detail: %s",
-                     YASIO_CARES_FALLBACK_DNS, ::ares_strerror(ares_ec));
-      }
-      ::ares_free_data(name_servers);
-    }
+#  if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE == 1
+    config_ares_name_servers(true);
+#  else
+    config_ares_name_servers(false);
+#  endif
   }
   else
     YASIO_KLOG("[c-ares] init channel failed, status=%d, detail:%s", status,
                ::ares_strerror(status));
+}
+bool io_service::config_ares_name_servers(bool dirty)
+{
+  std::string nscsv;
+  int status = 0;
+  if (dirty)
+  {
+#  if defined(__APPLE__)
+    struct __res_state res;
+    status = ::res_ninit(&res);
+    YASIO_KLOG("[c-ares] res_ninit status=%d, res.nscount=%d", status, res.nscount);
+    if (status == 0)
+    {
+      union res_sockaddr_union nsaddrs[MAXNS];
+      int nscnt = ::res_getservers(&res, nsaddrs, MAXNS);
+      for (unsigned int i = 0; i < nscnt; ++i)
+        endpoint::inaddr_to_csv_nl((sockaddr*)&nsaddrs[i].sin, nscsv);
+    }
+    ::res_nclose(&res);
+#  elif defined(__ANDROID__)
+    size_t num_servers = 0;
+    auto dns_servers   = ::ares_get_android_server_list(MAXNS, &num_servers);
+    if (dns_servers != nullptr)
+    {
+      for (int i = 0; i < num_servers; ++i)
+      {
+        nscsv += dns_servers[i];
+        nscsv += ',';
+        ::ares_free(dns_servers[i]);
+      }
+      ::ares_free(dns_servers);
+    }
+#  endif
+    if (!nscsv.empty())
+    {
+      ::ares_set_servers_csv(ares_, nscsv.c_str());
+      nscsv.clear();
+    }
+  }
+
+  // list all dns servers for resov problem diagnosis
+  ares_addr_node* name_servers = nullptr;
+  status                       = ::ares_get_servers(ares_, &name_servers);
+  if (status == ARES_SUCCESS)
+  {
+    for (auto name_server = name_servers; name_server != nullptr; name_server = name_server->next)
+      endpoint::inaddr_to_csv_nl(name_server->family, &name_server->addr, nscsv);
+
+    if (!nscsv.empty()) // if no valid name server, use predefined fallback dns
+      YASIO_KLOG("[c-ares] use system dns: %s", nscsv.c_str());
+    else
+    {
+      status = ::ares_set_servers_csv(ares_, YASIO_CARES_FALLBACK_DNS);
+      if (status == 0)
+        YASIO_KLOG("[c-ares] set fallback dns: '%s' succeed", YASIO_CARES_FALLBACK_DNS);
+      else
+        YASIO_KLOG("[c-ares] set fallback dns: '%s' failed, detail: %s", YASIO_CARES_FALLBACK_DNS,
+                   ::ares_strerror(status));
+    }
+    ::ares_free_data(name_servers);
+  }
+  return true;
 }
 void io_service::cleanup_ares_channel()
 {
@@ -1735,8 +1767,7 @@ void io_service::handle_connect_succeed(transport_handle_t transport)
   if (yasio__testbits(ctx->properties_, YCM_TCP))
   {
 #if defined(__APPLE__) || defined(__linux__)
-    if (yasio__testbits(ctx->properties_, YCM_TCP))
-      connection->set_optval(SOL_SOCKET, SO_NOSIGPIPE, (int)1);
+    connection->set_optval(SOL_SOCKET, SO_NOSIGPIPE, (int)1);
 #endif
     // apply tcp keepalive options
     if (options_.tcp_keepalive_.onoff)
@@ -2156,6 +2187,10 @@ void io_service::start_resolve(io_channel* ctx)
   });
   async_resolv_thread.detach();
 #else
+
+  if (this->options_.dns_dirty_)
+    this->options_.dns_dirty_ = !config_ares_name_servers(true);
+
   ares_addrinfo_hints hint;
   memset(&hint, 0x0, sizeof(hint));
   hint.ai_family = local_address_family();
@@ -2263,6 +2298,9 @@ void io_service::set_option_internal(int opt, va_list ap) // lgtm [cpp/poorly-do
       break;
     case YOPT_S_DNS_QUERIES_TRIES:
       options_.dns_queries_tries_ = va_arg(ap, int);
+      break;
+    case YOPT_S_DNS_DIRTY:
+      options_.dns_dirty_ = true;
       break;
     case YOPT_C_LFBFD_PARAMS: {
       auto channel = channel_at(static_cast<size_t>(va_arg(ap, int)));

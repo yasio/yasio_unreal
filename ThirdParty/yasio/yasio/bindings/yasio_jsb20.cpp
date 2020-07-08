@@ -26,6 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #define YASIO_HEADER_ONLY 1
+#define YASIO_HAVE_KCP 1
 
 #include "yasio/bindings/yasio_jsb20.h"
 #include "yasio/yasio.hpp"
@@ -547,6 +548,17 @@ static bool js_yasio_ibstream_seek(se::State& s)
 }
 SE_BIND_FUNC(js_yasio_ibstream_seek)
 
+static bool js_yasio_ibstream_to_string(se::State& s)
+{
+  yasio::ibstream* cobj = (yasio::ibstream*)s.nativeThisObject();
+  SE_PRECONDITION2(cobj, false, ": Invalid Native Object");
+
+  s.rval().setString(std::string(cobj->data(), cobj->length()));
+
+  return true;
+}
+SE_BIND_FUNC(js_yasio_ibstream_to_string)
+
 void js_register_yasio_ibstream(se::Object* obj)
 {
   auto cls = se::Class::create("ibstream", obj, nullptr, nullptr);
@@ -570,6 +582,7 @@ void js_register_yasio_ibstream(se::Object* obj)
   DEFINE_IBSTREAM_FUNC(read_bytes);
   DEFINE_IBSTREAM_FUNC(length);
   DEFINE_IBSTREAM_FUNC(seek);
+  DEFINE_IBSTREAM_FUNC(to_string);
   cls->defineFinalizeFunction(_SE(js_yasio_ibstream__dtor));
   cls->install();
   JSBClassType::registerClass<yasio::ibstream>(cls);
@@ -1070,6 +1083,7 @@ bool js_yasio_io_event_cindex(se::State& s)
 }
 SE_BIND_FUNC(js_yasio_io_event_cindex)
 
+#if !defined(YASIO_MINIFY_EVENT)
 bool js_yasio_io_event_timestamp(se::State& s)
 {
   auto cobj = (io_event*)s.nativeThisObject();
@@ -1078,6 +1092,7 @@ bool js_yasio_io_event_timestamp(se::State& s)
   return true;
 }
 SE_BIND_FUNC(js_yasio_io_event_timestamp)
+#endif
 
 void js_register_yasio_io_event(se::Object* obj)
 {
@@ -1091,8 +1106,9 @@ void js_register_yasio_io_event(se::Object* obj)
   DEFINE_IO_EVENT_FUNC(packet);
   DEFINE_IO_EVENT_FUNC(cindex);
   DEFINE_IO_EVENT_FUNC(transport);
+#if !defined(YASIO_MINIFY_EVENT)
   DEFINE_IO_EVENT_FUNC(timestamp);
-
+#endif
   cls->defineFinalizeFunction(_SE(jsb_yasio_io_event__dtor));
   cls->install();
   JSBClassType::registerClass<io_event>(cls);
