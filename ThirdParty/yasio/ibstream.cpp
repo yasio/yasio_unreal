@@ -54,7 +54,7 @@ void ibstream_view::reset(const void* data, size_t size)
   last_         = first_ + size;
 }
 
-int ibstream_view::read_i7()
+int ibstream_view::read_7b()
 {
   // Read out an Int32 7 bits at a time.  The high bit
   // of the byte when on means to continue reading more bytes.
@@ -69,7 +69,7 @@ int ibstream_view::read_i7()
       YASIO__THROW(std::logic_error("Format_Bad7BitInt32"), 0);
 
     // ReadByte handles end of stream cases for us.
-    b = read_i<uint8_t>();
+    b = read_byte();
     count |= (b & 0x7F) << shift;
     shift += 7;
   } while ((b & 0x80) != 0);
@@ -99,7 +99,7 @@ uint32_t ibstream_view::read_u24()
 
 cxx17::string_view ibstream_view::read_v()
 {
-  int count = read_i7();
+  int count = read_7b();
   return read_bytes(count);
 }
 
@@ -129,7 +129,7 @@ void ibstream_view::read_v32(void* oav, int len) { read_vx<uint32_t>().copy((cha
 void ibstream_view::read_v16(void* oav, int len) { read_vx<uint16_t>().copy((char*)oav, len); }
 void ibstream_view::read_v8(void* oav, int len) { read_vx<uint8_t>().copy((char*)oav, len); }
 
-char ibstream_view::read_byte() { return *consume(1); }
+uint8_t ibstream_view::read_byte() { return *consume(1); }
 
 void ibstream_view::read_bytes(std::string& oav, int len)
 {

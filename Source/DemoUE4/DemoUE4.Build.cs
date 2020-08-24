@@ -14,7 +14,8 @@ public class DemoUE4 : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		// PublicIncludePaths.Add(Path.Combine(EngineDirectory, "Source/ThirdParty/OpenSSL/1.1.1/Include/Win64/VS2015"));
-		PublicIncludePaths.Add(Path.Combine(ThirdPartyPath, "yasio"));
+		// Adds ThirdParty to Public Include Paths, we can easy to use header-only c++ libraries
+		PublicIncludePaths.Add(Path.Combine(ThirdPartyPath));
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
 

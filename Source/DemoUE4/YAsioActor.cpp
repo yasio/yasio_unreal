@@ -2,7 +2,7 @@
 
 
 #include "YAsioActor.h"
-#include "yasio/bindings/yasio_ue4.hpp"
+#include "yasio/platform/yasio_ue4.hpp"
 
 DECLARE_LOG_CATEGORY_EXTERN(yasio_ue4, Log, All);
 DEFINE_LOG_CATEGORY(yasio_ue4);

@@ -69,8 +69,11 @@ public:
   YASIO__DECL void write_i24(int32_t value);  // highest bit as sign
   YASIO__DECL void write_u24(uint32_t value); // highest byte ignored
 
-  /* write 7bit encoded variant integer value */
-  YASIO__DECL void write_i7(int value);
+  /* write 7bit encoded variant integer value
+  ** @.net BinaryWriter.Write7BitEncodedInt(Int32)
+  */
+  YASIO__DECL void write_7b(int value);
+  void write_i7(int value) { write_7b(value); }
 
   /* write blob data with '7bit encoded int' length field */
   YASIO__DECL void write_v(cxx17::string_view sv);
@@ -86,7 +89,7 @@ public:
   YASIO__DECL void write_v16(const void* v, int size);
   YASIO__DECL void write_v8(const void* v, int size);
 
-  YASIO__DECL void write_byte(char v);
+  YASIO__DECL void write_byte(uint8_t v);
 
   YASIO__DECL void write_bytes(cxx17::string_view);
   YASIO__DECL void write_bytes(const void* v, int vl);

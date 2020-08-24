@@ -142,23 +142,23 @@ void obstream::write_u24(uint32_t value)
   write_bytes(&value, 3);
 }
 
-void obstream::write_i7(int value)
+void obstream::write_7b(int value)
 {
   // Write out an int 7 bits at a time.  The high bit of the byte,
   // when on, tells reader to continue reading more bytes.
   uint32_t v = (uint32_t)value; // support negative numbers
   while (v >= 0x80)
   {
-    write_i<uint8_t>((uint8_t)(v | 0x80));
+    write_byte((uint8_t)(v | 0x80));
     v >>= 7;
   }
-  write_i<uint8_t>((uint8_t)v);
+  write_byte((uint8_t)v);
 }
 
 void obstream::write_v(cxx17::string_view sv)
 {
   int len = static_cast<int>(sv.length());
-  write_i7(len);
+  write_7b(len);
   write_bytes(sv.data(), len);
 }
 
@@ -179,7 +179,7 @@ void obstream::write_v32(const void* v, int size) { write_vx<uint32_t>(v, size);
 void obstream::write_v16(const void* v, int size) { write_vx<uint16_t>(v, size); }
 void obstream::write_v8(const void* v, int size) { write_vx<uint8_t>(v, size); }
 
-void obstream::write_byte(char v) { buffer_.push_back(v); }
+void obstream::write_byte(uint8_t v) { buffer_.push_back(v); }
 
 void obstream::write_bytes(cxx17::string_view v)
 {
