@@ -30,17 +30,12 @@ SOFTWARE.
 
 extern "C" {
 #include "ares_config.h"
-#include "c-ares/ares.h"
-#include "c-ares/ares_android.h"
+#include "ares.h"
 extern void (*ares_free)(void* ptr);
 }
 
 #if defined(__ANDROID__)
 #  include "yasio/platform/yasio_jni.hpp"
-#elif defined(__APPLE__)
-#  include <TargetConditionals.h>
-#  include <arpa/nameser.h>
-#  include <resolv.h>
 #endif
 
 #endif

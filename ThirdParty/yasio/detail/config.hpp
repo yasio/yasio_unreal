@@ -85,6 +85,11 @@ SOFTWARE.
 // #define YASIO_DISABLE_CONCURRENT_SINGLETON 1
 
 /*
+** Uncomment or add compiler flag -DYASIO_ENABLE_UDS to enable unix domain socket via SOCK_STREAM
+*/
+// #define YASIO_ENABLE_UDS 1
+
+/*
 ** Workaround for 'vs2013 without full c++11 support', in the future, drop vs2013 support and
 ** follow 3 lines code will be removed
 */
@@ -158,7 +163,7 @@ SOFTWARE.
 /*
 **  The yasio version macros
 */
-#define YASIO_VERSION_NUM 0x033303
+#define YASIO_VERSION_NUM 0x033307
 
 /*
 ** The macros used by io_service.
@@ -167,7 +172,11 @@ SOFTWARE.
 #define YASIO_SOMAXCONN 19
 
 // The max wait duration in macroseconds when io_service nothing to do.
-#define YASIO_MAX_WAIT_DURATION 5 * 60 * 1000 * 1000
+#define YASIO_MAX_WAIT_DURATION (5LL * 60LL * 1000LL * 1000LL)
+
+// The min wait duration in macroseconds when io_service have outstanding work to do.
+// !!!Only affects Single Core CPU
+#define YASIO_MIN_WAIT_DURATION 10LL
 
 // The default ttl of multicast
 #define YASIO_DEFAULT_MULTICAST_TTL (int)128
