@@ -105,6 +105,8 @@ typedef int socklen_t;
 typedef int socket_native_type;
 #  undef socket
 #endif
+#define SD_NONE -1
+
 #include <fcntl.h> // common platform header
 
 // redefine socket error code for posix api
@@ -222,10 +224,10 @@ inline bool IN6_IS_ADDR_GLOBAL(const in6_addr* a)
 #endif
 
 // shoulde close connection condition when retval of recv < 0
-#define YASIO_SHOULD_CLOSE_0(ec) ((ec) != EAGAIN && (ec) != EWOULDBLOCK && (ec) != EINTR)
+#define YASIO__RECV_FAIL(ec) ((ec) != EAGAIN && (ec) != EWOULDBLOCK && (ec) != EINTR)
 
 // shoulde close connection condition when retval of send < 0
-#define YASIO_SHOULD_CLOSE_1(ec) ((ec) != EAGAIN && (ec) != EWOULDBLOCK && (ec) != EINTR && (ec) != ENOBUFS && (ec) != EPERM)
+#define YASIO__SEND_FAIL(ec) ((ec) != EAGAIN && (ec) != EWOULDBLOCK && (ec) != EINTR && (ec) != ENOBUFS && (ec) != EPERM)
 
 #define YASIO_ADDR_ANY(af) (af == AF_INET ? "0.0.0.0" : "::")
 
@@ -1060,11 +1062,11 @@ public:
 
   /* @brief: close sends
    ** @params:
-   **        non
+   **        shut_how: [SD_SEND] or [SD_RECEIVE] or [SD_BOTH] or [SD_NONE]
    **
    ** @returns: [0] succeed, otherwise, a value of SOCKET_ERROR is returned.
    */
-  YASIO__DECL void close(void);
+  YASIO__DECL void close(int shut_how = SD_BOTH);
 
   /* @brief: Retrive tcp socket rtt in microseconds
    ** @params:

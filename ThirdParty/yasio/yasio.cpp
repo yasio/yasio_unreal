@@ -264,10 +264,10 @@ void highp_timer::cancel()
 }
 
 /// io_send_op
-int io_send_op::perform(io_transport* transport, const void* buf, int n) { return transport->write_cb_(buf, n); }
+int io_send_op::perform(io_transport* transport, const void* buf, int n) { return transport->write_cb_(buf, n, nullptr); }
 
 /// io_sendto_op
-int io_sendto_op::perform(io_transport* transport, const void* buf, int n) { return transport->socket_->sendto(buf, n, destination_); }
+int io_sendto_op::perform(io_transport* transport, const void* buf, int n) { return transport->write_cb_(buf, n, &destination_); }
 
 #if defined(YASIO_HAVE_SSL)
 void ssl_auto_handle::destroy()
@@ -289,6 +289,13 @@ io_channel::io_channel(io_service& service, int index) : timer_(service)
   dns_queries_state_ = YDQS_FAILED;
   index_             = index;
   decode_len_        = [=](void* ptr, int len) { return this->__builtin_decode_len(ptr, len); };
+}
+std::string io_channel::format_destination() const
+{
+  if (yasio__testbits(properties_, YCPF_NEEDS_QUERIES))
+    return yasio::strfmt(127, "%s(%s):%u", remote_host_.c_str(), !remote_eps_.empty() ? remote_eps_[0].ip().c_str() : "undefined", remote_port_);
+
+  return yasio::strfmt(127, "%s:%u", remote_host_.c_str(), remote_port_);
 }
 void io_channel::enable_multicast_group(const ip::endpoint& ep, int loopback)
 {
@@ -498,7 +505,7 @@ int io_transport::call_read(void* data, int size, int& error)
   if (n < 0)
   {
     error = xxsocket::get_last_errno();
-    if (!YASIO_SHOULD_CLOSE_0(error))
+    if (!YASIO__RECV_FAIL(error))
       return (error = 0); // status ok, clear error
     return n;
   }
@@ -522,17 +529,12 @@ int io_transport::call_write(io_send_op* op, int& error)
   else if (n < 0)
   {
     error = xxsocket::get_last_errno();
-    if (!YASIO_SHOULD_CLOSE_1(error))
+    if (!YASIO__SEND_FAIL(error))
       n = 0;
     else if (yasio__testbits(ctx_->properties_, YCM_UDP))
     { // UDP: don't cause handle_close, simply drop the op
-      auto& options = get_service().options_;
-      if (options.ignore_udp_error_)
-      {
-        YASIO_KLOGI("[index: %d] write udp socket failed, ec=%d, detail:%s", this->cindex(), error, io_service::strerror(error));
         this->complete_op(op, error);
         n = 0;
-      }
     }
   }
   return n;
@@ -546,7 +548,7 @@ void io_transport::complete_op(io_send_op* op, int error)
 }
 void io_transport::set_primitives()
 {
-  this->write_cb_ = [=](const void* data, int len) { return socket_->send(data, len); };
+  this->write_cb_ = [=](const void* data, int len, const ip::endpoint*) { return socket_->send(data, len); };
   this->read_cb_  = [=](void* data, int len) { return socket_->recv(data, len, 0); };
 }
 // -------------------- io_transport_tcp ---------------------
@@ -582,7 +584,7 @@ void io_transport_ssl::set_primitives()
     }
     return n;
   };
-  this->write_cb_ = [=](const void* data, int len) {
+  this->write_cb_ = [=](const void* data, int len, const ip::endpoint*) {
     ERR_clear_error();
     int n = ::SSL_write(ssl_, data, len);
     if (n > 0)
@@ -614,9 +616,7 @@ const ip::endpoint& io_transport_udp::ensure_destination() const
 {
   if (this->destination_.af() != AF_UNSPEC)
     return this->destination_;
-  if (!ctx_->remote_eps_.empty())
-    this->destination_ = ctx_->remote_eps_[0];
-  return this->destination_;
+  return (this->destination_ = this->peer_);
 }
 int io_transport_udp::confgure_remote(const ip::endpoint& peer)
 {
@@ -670,10 +670,16 @@ void io_transport_udp::set_primitives()
     io_transport::set_primitives();
   else
   {
-    // set write_cb_ to dummy, a unconnected udp always perform by operation: io_sendto_op
-    this->write_cb_ = [=](const void* /*data*/, int /*len*/) {
-      assert(false);
-      return 0;
+    this->write_cb_ = [=](const void* data, int len, const ip::endpoint* destination) {
+      assert(destination);
+      int n = socket_->sendto(data, len, *destination);
+      if (n < 0)
+      {
+        auto error = xxsocket::get_last_errno();
+        if (YASIO__SEND_FAIL(error)) 
+            YASIO_KLOGI("[index: %d] write udp socket failed, ec=%d, detail:%s", this->cindex(), error, io_service::strerror(error));
+      }
+      return n;
     };
     this->read_cb_ = [=](void* data, int len) {
       ip::endpoint peer;
@@ -700,7 +706,7 @@ io_transport_kcp::io_transport_kcp(io_channel* ctx, std::shared_ptr<xxsocket>& s
   ::ikcp_setoutput(this->kcp_, [](const char* buf, int len, ::ikcpcb* /*kcp*/, void* user) {
     auto t = (io_transport_kcp*)user;
     if (yasio__min_wait_duration == 0)
-      return t->connected_ ? t->socket_->send(buf, len) : t->socket_->sendto(buf, len, t->ensure_destination());
+      return t->write_cb_(buf, len, &t->ensure_destination());
     // Enqueue to transport queue
     return t->io_transport_udp::write(std::vector<char>(buf, buf + len), nullptr);
   });
@@ -1205,7 +1211,7 @@ void io_service::do_nonblocking_connect(io_channel* ctx)
 
   ctx->state_ = io_base::state::OPENING;
   auto& ep    = ctx->remote_eps_[0];
-  YASIO_KLOGD("[index: %d] connecting server %s:%u...", ctx->index_, ctx->remote_host_.c_str(), ctx->remote_port_);
+  YASIO_KLOGD("[index: %d] connecting server %s(%s):%u...", ctx->index_, ctx->remote_host_.c_str(), ep.ip().c_str(), ctx->remote_port_);
   if (ctx->socket_->open(ep.af(), ctx->socktype_))
   {
     int ret = 0;
@@ -1589,10 +1595,6 @@ void io_service::do_nonblocking_accept_completion(io_channel* ctx, fd_set* fds_a
         if (n > 0)
         {
           YASIO_KLOGV("[index: %d] recvfrom peer: %s succeed.", ctx->index_, peer.to_string().c_str());
-          /*
-          On Windows: always recv data from same client
-          On Linux: only once, just like tcp accept, just like tcp accept
-          */
 #if !defined(_WIN32)
           auto transport = static_cast<io_transport_udp*>(do_dgram_accept(ctx, peer, error));
 #else
@@ -1604,8 +1606,7 @@ void io_service::do_nonblocking_accept_completion(io_channel* ctx, fd_set* fds_a
            Windows (unfortunately), detail see:
            https://blog.grijjy.com/2018/08/29/creating-high-performance-udp-servers-on-windows-and-linux
            https://cloud.tencent.com/developer/article/1004555
-           So we emulate thus by ourself, don't care the performance, just a workaround
-           implementation.
+           So we emulate thus by ourself, don't care the performance, just a workaround implementation.
          */
           // for win32, we check exists udp clients by ourself, and only write operation can be
           // perform on transports, the read operation still dispatch by channel.
@@ -1629,7 +1630,8 @@ void io_service::do_nonblocking_accept_completion(io_channel* ctx, fd_set* fds_a
         else if (n < 0)
         {
           error = xxsocket::get_last_errno();
-          YASIO_KLOGE("[index: %d] recvfrom failed, ec=%d, detail:%s", ctx->index_, error, this->strerror(error));
+          if (YASIO__RECV_FAIL(error))
+              YASIO_KLOGE("[index: %d] recvfrom failed, ec=%d, detail:%s", ctx->index_, error, this->strerror(error));
         }
       }
     }
@@ -1671,7 +1673,11 @@ void io_service::handle_connect_succeed(transport_handle_t transport)
   ctx->set_last_errno(0); // clear errno, value may be EINPROGRESS
   auto& connection = transport->socket_;
   if (yasio__testbits(ctx->properties_, YCM_CLIENT))
+  {
     ctx->state_ = io_base::state::OPEN;
+    if (yasio__testbits(ctx->properties_, YCM_UDP))
+      static_cast<io_transport_udp*>(transport)->confgure_remote(ctx->remote_eps_[0]);
+  }
   else
   { // tcp/udp server, accept a new client session
     connection->set_nonblocking(true);
@@ -1689,15 +1695,15 @@ void io_service::handle_connect_succeed(transport_handle_t transport)
 
   notify_connect_succeed(transport);
 }
-void io_service::notify_connect_succeed(transport_handle_t transport)
+void io_service::notify_connect_succeed(transport_handle_t t)
 {
-  auto ctx = transport->ctx_;
-  auto& s  = transport->socket_;
+  auto ctx = t->ctx_;
+  auto& s  = t->socket_;
   YASIO_KLOGV("[index: %d] sndbuf=%d, rcvbuf=%d", ctx->index_, s->get_optval<int>(SOL_SOCKET, SO_SNDBUF), s->get_optval<int>(SOL_SOCKET, SO_RCVBUF));
 
-  YASIO_KLOGD("[index: %d] the connection #%u(%p) [%s] --> [%s] is established.", ctx->index_, transport->id_, transport,
-              s->local_endpoint().to_string().c_str(), s->peer_endpoint().to_string().c_str());
-  this->handle_event(event_ptr(new io_event(ctx->index_, YEK_CONNECT_RESPONSE, 0, transport)));
+  YASIO_KLOGD("[index: %d] the connection #%u(%p) [%s] --> [%s] is established.", ctx->index_, t->id_, t,
+              t->local_endpoint().to_string().c_str(), t->remote_endpoint().to_string().c_str());
+  this->handle_event(event_ptr(new io_event(ctx->index_, YEK_CONNECT_RESPONSE, 0, t)));
 }
 transport_handle_t io_service::allocate_transport(io_channel* ctx, std::shared_ptr<xxsocket> socket)
 {
@@ -1751,8 +1757,7 @@ void io_service::handle_connect_failed(io_channel* ctx, int error)
 {
   ctx->properties_ &= 0xffffff; // clear highest byte flags
   cleanup_io(ctx);
-  YASIO_KLOGE("[index: %d] connect server %s:%u failed, ec=%d, detail:%s", ctx->index_, ctx->remote_host_.c_str(), ctx->remote_port_, error,
-              io_service::strerror(error));
+  YASIO_KLOGE("[index: %d] connect server %s failed, ec=%d, detail:%s", ctx->index_, ctx->format_destination().c_str(), error, io_service::strerror(error));
   this->handle_event(event_ptr(new io_event(ctx->index_, YEK_CONNECT_RESPONSE, error)));
 }
 bool io_service::do_read(transport_handle_t transport, fd_set* fds_array)
@@ -2059,18 +2064,6 @@ void io_service::start_resolve(io_channel* ctx)
       ctx->dns_queries_state_ = YDQS_FAILED;
       YASIO_KLOGE("[index: %d] resolve %s failed, ec=%d, detail:%s", ctx->index_, ctx->remote_host_.c_str(), error, xxsocket::gai_strerror(error));
     }
-    /*
-    The getaddrinfo behavior at win32 is strange:
-    If the channel 0 is in non-blocking connect, and waiting at select, than
-    channel 1 request connect(need dns queries), it's wake up the select call,
-    do resolve with getaddrinfo. After resolved, the channel 0 call FD_ISSET
-    without select call, FD_ISSET will always return true, even through the
-    TCP connection handshake is not complete.
-
-    Try write data to a incomplete TCP will trigger error: 10057
-    Another result at this situation is: Try get local endpoint by getsockname
-    will return 0.0.0.0
-    */
     this->interrupt();
   });
   async_resolv_thread.detach();
@@ -2166,9 +2159,6 @@ void io_service::set_option_internal(int opt, va_list ap) // lgtm [cpp/poorly-do
       break;
     case YOPT_S_NO_NEW_THREAD:
       this->options_.no_new_thread_ = !!va_arg(ap, int);
-      break;
-    case YOPT_S_IGNORE_UDP_ERROR:
-      this->options_.ignore_udp_error_ = !!va_arg(ap, int);
       break;
 #if defined(YASIO_HAVE_SSL)
     case YOPT_S_SSL_CACERT:

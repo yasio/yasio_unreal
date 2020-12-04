@@ -1146,7 +1146,9 @@ int xxsocket::sendto(const void* buf, int len, const endpoint& to, int flags) co
 int xxsocket::recvfrom(void* buf, int len, endpoint& from, int flags) const
 {
   socklen_t addrlen = sizeof(from);
-  return static_cast<int>(::recvfrom(this->fd, (char*)buf, len, flags, &from.sa_, &addrlen));
+  int n = static_cast<int>(::recvfrom(this->fd, (char*)buf, len, flags, &from.sa_, &addrlen));
+  from.len(addrlen);
+  return n;
 }
 
 int xxsocket::handle_write_ready(const std::chrono::microseconds& wtimeout) const { return handle_write_ready(this->fd, wtimeout); }
@@ -1273,10 +1275,12 @@ bool xxsocket::alive(void) const { return this->send("", 0) != -1; }
 
 int xxsocket::shutdown(int how) const { return ::shutdown(this->fd, how); }
 
-void xxsocket::close(void)
+void xxsocket::close(int shut_how)
 {
   if (is_open())
   {
+    if (shut_how >= 0)
+      ::shutdown(this->fd, shut_how);
     ::closesocket(this->fd);
     this->fd = invalid_socket;
   }
