@@ -25,33 +25,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef YASIO__LUA_HPP
-#define YASIO__LUA_HPP
+#include "yasio_uelua.h"
+#include "yasio/platform/yasio_ue4.hpp"
+#include "lua.hpp"
+#if defined(NS_SLUA)
+using namespace NS_SLUA;
+#endif
+#include "yasio/bindings/lyasio.cpp"
 
-#if !defined(YASIO_LUA_ENABLE_GLOBAL)
-#  define YASIO_LUA_ENABLE_GLOBAL 0
-#endif
+DECLARE_LOG_CATEGORY_EXTERN(yasio_ue4, Log, All);
+DEFINE_LOG_CATEGORY(yasio_ue4);
 
-#if defined(_WINDLL)
-#  if defined(LUA_LIB)
-#    define YASIO_LUA_API __declspec(dllexport)
-#  else
-#    define YASIO_LUA_API __declspec(dllimport)
-#  endif
-#else
-#  define YASIO_LUA_API
-#endif
+void yasio_uelua_init(void* L)
+{
+  auto Ls            = (lua_State*)L;
+  print_fn2_t log_cb = [](int level, const char* msg) {
+    FString text(msg);
+    const TCHAR* tstr = *text;
+    UE_LOG(yasio_ue4, Log, L"%s", tstr);
+  };
+  io_service::init_globals(log_cb);
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-#if !defined(NS_SLUA)
-struct lua_State;
-#endif
-YASIO_LUA_API int luaopen_yasio(lua_State* L);
-YASIO_LUA_API void luaregister_yasio(lua_State* L); // register yasio to package.preload
-#if defined(__cplusplus)
+  luaregister_yasio(Ls);
 }
-#endif
-
-#endif

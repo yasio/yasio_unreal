@@ -46,7 +46,7 @@ void AYAsioActor::InitYAsio()
     };
     io_service::init_globals(log_cb);
 	
-    yasio::inet::io_hostent endpoints[] = { {"soft.360.cn", 80} };
+    yasio::inet::io_hostent endpoints[] = { {"tool.chinaz.com", 80} };
     service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
     service->set_option(YOPT_S_PRINT_FN2, &log_cb);
     service->start([=](event_ptr&& event) {
@@ -58,7 +58,7 @@ void AYAsioActor::InitYAsio()
             //fwrite(packet.data(), packet.size(), 1, stdout);
             //fflush(stdout);
             packet.push_back('\0');
-            FString text(packet.data());
+            FString text(UTF8_TO_TCHAR(packet.data()));
             const TCHAR* tstr = *text;
             UE_LOG(yasio_ue4, Log, L"%s", tstr);
             break;
@@ -70,13 +70,13 @@ void AYAsioActor::InitYAsio()
                 if (event->cindex() == 0)
                 {
                     obstream obs;
-                    obs.write_bytes("GET /static/baoku/info_7_0/softinfo_104947374.html HTTP/1.1\r\n");
+                    obs.write_bytes("GET / HTTP/1.1\r\n");
 
-                    obs.write_bytes("Host: soft.360.cn\r\n");
+                    obs.write_bytes("Host: tool.chinaz.com\r\n");
 
                     obs.write_bytes("User-Agent: Mozilla/5.0 (Windows NT 10.0; "
                         "WOW64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/51.0.2704.106 Safari/537.36\r\n");
+                        "Chrome/87.0.4280.88 Safari/537.36\r\n");
                     obs.write_bytes("Accept: */*;q=0.8\r\n");
                     obs.write_bytes("Connection: Close\r\n\r\n");
 

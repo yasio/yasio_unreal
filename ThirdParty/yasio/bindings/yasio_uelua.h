@@ -25,33 +25,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef YASIO__LUA_HPP
-#define YASIO__LUA_HPP
+#ifndef YASIO__UELUA_HPP
+#define YASIO__UELUA_HPP
 
-#if !defined(YASIO_LUA_ENABLE_GLOBAL)
-#  define YASIO_LUA_ENABLE_GLOBAL 0
-#endif
-
-#if defined(_WINDLL)
-#  if defined(LUA_LIB)
-#    define YASIO_LUA_API __declspec(dllexport)
-#  else
-#    define YASIO_LUA_API __declspec(dllimport)
-#  endif
-#else
-#  define YASIO_LUA_API
-#endif
-
-#if defined(__cplusplus)
-extern "C" {
-#endif
-#if !defined(NS_SLUA)
-struct lua_State;
-#endif
-YASIO_LUA_API int luaopen_yasio(lua_State* L);
-YASIO_LUA_API void luaregister_yasio(lua_State* L); // register yasio to package.preload
-#if defined(__cplusplus)
-}
-#endif
+void yasio_uelua_init(void* L);
 
 #endif
