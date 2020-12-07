@@ -12,8 +12,8 @@ AYAsioActor::AYAsioActor()
 {
     this->service = nullptr; // the yasio io_service
 
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
+    // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+    PrimaryActorTick.bCanEverTick = true;
 
     VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
     VisualMesh->SetupAttachment(RootComponent);
@@ -39,7 +39,7 @@ void AYAsioActor::InitYAsio()
 {
     if (service) return;
 
-    print_fn_t log_cb = [](const char* msg) {
+    print_fn2_t log_cb = [](int level, const char* msg) {
         FString text(msg);
         const TCHAR* tstr = *text;
         UE_LOG(yasio_ue4, Log, L"%s", tstr);
@@ -48,7 +48,7 @@ void AYAsioActor::InitYAsio()
 	
     yasio::inet::io_hostent endpoints[] = { {"soft.360.cn", 80} };
     service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
-    service->set_option(YOPT_S_PRINT_FN, &log_cb);
+    service->set_option(YOPT_S_PRINT_FN2, &log_cb);
     service->start([=](event_ptr&& event) {
         switch (event->kind())
         {
