@@ -48,7 +48,7 @@ SOFTWARE.
 // Tests whether compiler has c++14 support
 #if (defined(__cplusplus) && __cplusplus >= 201402L) || (defined(_MSC_VER) && _MSC_VER >= 1900 && (defined(_MSVC_LANG) && (_MSVC_LANG >= 201402L)))
 #  ifndef YASIO_HAS_CXX14
-#    define YASIO__HAS_CXX14 0
+#    define YASIO__HAS_CXX14 1
 #  endif // C++14 features macro
 #endif   // C++14 features check
 #if !defined(YASIO__HAS_CXX14)
@@ -113,6 +113,21 @@ SOFTWARE.
 #  define YASIO__64BITS 1
 #else
 #  define YASIO__64BITS 0
+#endif
+
+// Try detect compiler exceptions
+#if !defined(__cpp_exceptions)
+#  define YASIO__NO_EXCEPTIONS 1
+#endif
+
+#if !defined(YASIO__NO_EXCEPTIONS)
+#  define YASIO__THROW(x, retval) throw(x)
+#  define YASIO__THROW0(x) throw(x)
+#  define YASIO__THROWV(x, val) throw(x), (val)
+#else
+#  define YASIO__THROW(x, retval) return (retval)
+#  define YASIO__THROW0(x) return
+#  define YASIO__THROWV(x, val) (val)
 #endif
 
 // Compatibility with non-clang compilers...
