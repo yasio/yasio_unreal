@@ -46,7 +46,7 @@ void AYAsioActor::InitYAsio()
     };
     io_service::init_globals(log_cb);
 	
-    yasio::inet::io_hostent endpoints[] = { {"tool.chinaz.com", 80} };
+    yasio::inet::io_hostent endpoints[] = { {"github.com", 443} };
     service = new io_service(endpoints, YASIO_ARRAYSIZE(endpoints));
     service->set_option(YOPT_S_PRINT_FN2, &log_cb);
     service->start([=](event_ptr&& event) {
@@ -72,7 +72,7 @@ void AYAsioActor::InitYAsio()
                     obstream obs;
                     obs.write_bytes("GET / HTTP/1.1\r\n");
 
-                    obs.write_bytes("Host: tool.chinaz.com\r\n");
+                    obs.write_bytes("Host: github.com\r\n");
 
                     obs.write_bytes("User-Agent: Mozilla/5.0 (Windows NT 10.0; "
                         "WOW64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -97,7 +97,7 @@ void AYAsioActor::BeginPlay()
     Super::BeginPlay();
 
     InitYAsio();
-    service->open(0); // open http client
+    service->open(0, YCK_SSL_CLIENT); // open https client
 }
 
 // Called every frame
