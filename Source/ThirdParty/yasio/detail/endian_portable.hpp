@@ -1,11 +1,11 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store
-// universal app
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
+// client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2020 HALX99
+Copyright (c) 2012-2021 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -33,55 +33,55 @@ SOFTWARE.
 #include <stdint.h>
 
 #ifdef _WIN32
+#  if !defined(WIN32_LEAN_AND_MEAN)
+#    define WIN32_LEAN_AND_MEAN
+#  endif
 #  include <WinSock2.h>
-
 #  include <Windows.h>
 #else
 #  include <arpa/inet.h>
 #endif
-
 #include "yasio/detail/fp16.hpp"
 
-#if !defined(_MSC_VER) || (defined(_MSC_VER) && _MSC_VER < 1800) || (NTDDI_VERSION <= 0x06010000 && !defined(WINRT))
-
+namespace yasio
+{
 // clang-format off
+#  define YASIO__SWAP_SHORT(s) ((((s) >> 8) & 0x00ff) | (((s) << 8) & 0xff00))
 /*
  * Byte order conversion functions for 64-bit integers and 32 + 64 bit
  * floating-point numbers.  IEEE big-endian format is used for the
  * network floating point format.
  */
-#  define _WS2_32_WINSOCK_SWAP_LONG(l)                                                             \
-    ((((l) >> 24) & 0x000000FFL) | (((l) >> 8) & 0x0000FF00L) | (((l) << 8) & 0x00FF0000L) |       \
-     (((l) << 24) & 0xFF000000L))
+#define YASIO__SWAP_LONG(l)                      \
+            ( ( ((l) >> 24) & 0x000000FFL ) |    \
+              ( ((l) >>  8) & 0x0000FF00L ) |    \
+              ( ((l) <<  8) & 0x00FF0000L ) |    \
+              ( ((l) << 24) & 0xFF000000L ) )
 
-#  define _WS2_32_WINSOCK_SWAP_LONGLONG(l)                                                         \
-    ((((l) >> 56) & 0x00000000000000FFLL) | (((l) >> 40) & 0x000000000000FF00LL) |                 \
-     (((l) >> 24) & 0x0000000000FF0000LL) | (((l) >> 8) & 0x00000000FF000000LL) |                  \
-     (((l) << 8) & 0x000000FF00000000LL) | (((l) << 24) & 0x0000FF0000000000LL) |                  \
-     (((l) << 40) & 0x00FF000000000000LL) | (((l) << 56) & 0xFF00000000000000LL))
+#define YASIO__SWAP_LONGLONG(l)                           \
+            ( ( ((l) >> 56) & 0x00000000000000FFLL ) |    \
+              ( ((l) >> 40) & 0x000000000000FF00LL ) |    \
+              ( ((l) >> 24) & 0x0000000000FF0000LL ) |    \
+              ( ((l) >>  8) & 0x00000000FF000000LL ) |    \
+              ( ((l) <<  8) & 0x000000FF00000000LL ) |    \
+              ( ((l) << 24) & 0x0000FF0000000000LL ) |    \
+              ( ((l) << 40) & 0x00FF000000000000LL ) |    \
+              ( ((l) << 56) & 0xFF00000000000000LL ) )
 
 // clang-format on
-
-#  ifndef htonll
-inline uint64_t htonll(uint64_t Value)
+inline uint64_t(htonll)(uint64_t Value)
 {
-  const uint64_t Retval = _WS2_32_WINSOCK_SWAP_LONGLONG(Value);
+  const uint64_t Retval = YASIO__SWAP_LONGLONG(Value);
   return Retval;
 }
-#  endif /* htonll */
 
-#  ifndef ntohll
-inline uint64_t ntohll(uint64_t Value)
+inline uint64_t(ntohll)(uint64_t Value)
 {
-  const uint64_t Retval = _WS2_32_WINSOCK_SWAP_LONGLONG(Value);
+  const uint64_t Retval = YASIO__SWAP_LONGLONG(Value);
   return Retval;
 }
-#  endif /* ntohll */
 
-#endif /* NO_EXTRA_HTON_FUNCTIONS */
-
-namespace yasio
-{
+YASIO__NS_INLINE
 namespace endian
 {
 template <typename _Ty, size_t n> struct byte_order_impl {};
@@ -102,8 +102,8 @@ template <typename _Ty> struct byte_order_impl<_Ty, sizeof(int32_t)> {
 };
 
 template <typename _Ty> struct byte_order_impl<_Ty, sizeof(int64_t)> {
-  static inline _Ty host_to_network(_Ty value) { return static_cast<_Ty>(htonll(static_cast<uint64_t>(value))); }
-  static inline _Ty network_to_host(_Ty value) { return static_cast<_Ty>(ntohll(static_cast<uint64_t>(value))); }
+  static inline _Ty host_to_network(_Ty value) { return static_cast<_Ty>((::yasio::htonll)(static_cast<uint64_t>(value))); }
+  static inline _Ty network_to_host(_Ty value) { return static_cast<_Ty>((::yasio::ntohll)(static_cast<uint64_t>(value))); }
 };
 
 #if defined(YASIO_HAVE_HALF_FLOAT)
@@ -122,7 +122,7 @@ template <> struct byte_order_impl<float, sizeof(float)> {
   static inline float host_to_network(float value)
   {
     uint32_t* p = (uint32_t*)&value;
-    *p          = _WS2_32_WINSOCK_SWAP_LONG(*p);
+    *p          = YASIO__SWAP_LONG(*p);
     return value;
   }
   static inline float network_to_host(float value) { return host_to_network(value); }
@@ -132,7 +132,7 @@ template <> struct byte_order_impl<double, sizeof(double)> {
   static inline double host_to_network(double value)
   {
     uint64_t* p = (uint64_t*)&value;
-    *p          = _WS2_32_WINSOCK_SWAP_LONGLONG(*p);
+    *p          = YASIO__SWAP_LONGLONG(*p);
     return value;
   }
   static inline double network_to_host(double value) { return host_to_network(value); }
@@ -140,6 +140,20 @@ template <> struct byte_order_impl<double, sizeof(double)> {
 
 template <typename _Ty> inline _Ty host_to_network(_Ty value) { return byte_order_impl<_Ty, sizeof(_Ty)>::host_to_network(value); }
 template <typename _Ty> inline _Ty network_to_host(_Ty value) { return byte_order_impl<_Ty, sizeof(_Ty)>::network_to_host(value); }
+inline int host_to_network(int value, int size)
+{
+  auto netval = host_to_network<unsigned int>(value);
+  if (size < YASIO_SSIZEOF(int))
+    netval >>= ((YASIO_SSIZEOF(int) - size) * 8);
+  return static_cast<int>(netval);
+}
+inline int network_to_host(int value, int size)
+{
+  auto hostval = network_to_host<unsigned int>(value);
+  if (size < YASIO_SSIZEOF(int))
+    hostval >>= ((YASIO_SSIZEOF(int) - size) * 8);
+  return static_cast<int>(hostval);
+}
 
 /// <summary>
 /// CLASS TEMPLATE convert_traits
@@ -151,13 +165,20 @@ template <typename _TT> struct convert_traits {};
 template <> struct convert_traits<network_convert_tag> {
   template <typename _Ty> static inline _Ty to(_Ty value) { return host_to_network<_Ty>(value); }
   template <typename _Ty> static inline _Ty from(_Ty value) { return network_to_host<_Ty>(value); }
+  static int toint(int value, int size) { return host_to_network(value, size); }
+  static int fromint(int value, int size) { return network_to_host(value, size); }
 };
 
 template <> struct convert_traits<host_convert_tag> {
   template <typename _Ty> static inline _Ty to(_Ty value) { return value; }
   template <typename _Ty> static inline _Ty from(_Ty value) { return value; }
+  static int toint(int value, int) { return value; }
+  static int fromint(int value, int) { return value; }
 };
 } // namespace endian
+#if !YASIO__HAS_NS_INLINE
+using namespace yasio::endian;
+#endif
 
 namespace bits
 {

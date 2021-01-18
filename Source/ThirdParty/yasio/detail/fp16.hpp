@@ -1,10 +1,10 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A multi-platform support c++11 library with focus on asio (asynchronous socket I/O) 
-// for any client application, support windows & linux & apple & android & win10-universal.
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
+// client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
-Copyright (c) 2012-2020 HALX99
+Copyright (c) 2012-2021 HALX99
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -29,7 +29,6 @@ SOFTWARE.
 // Includes IEEE 754 16-bit half-precision floating-point library
 #  include "half/half.hpp"
 typedef half_float::half fp16_t;
-#  define YASIO__SWAP_SHORT(s) ((((s) >> 8) & 0x00ff) | (((s) << 8) & 0xff00))
 #endif
 
 #endif

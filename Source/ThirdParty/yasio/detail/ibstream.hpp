@@ -1,11 +1,11 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store
-// universal app
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
+// client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2020 HALX99
+Copyright (c) 2012-2021 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -140,6 +140,15 @@ public:
   */
   template <typename _Intty> _Intty read_ix() { return detail::read_ix_helper<this_type, _Intty>::read_ix(this); }
 
+  int read_varint(int size)
+  {
+    size = yasio::clamp(size, 1, YASIO_SSIZEOF(int));
+
+    int value = 0;
+    ::memcpy(&value, consume(size), size);
+    return convert_traits_type::fromint(value, size);
+  }
+
   /* read blob data with '7bit encoded int' length field */
   cxx17::string_view read_v()
   {
@@ -178,6 +187,7 @@ public:
   size_t length(void) const { return last_ - first_; }
   const char* data() const { return first_; }
 
+  void advance(ptrdiff_t offset) { ptr_ += offset; }
   ptrdiff_t seek(ptrdiff_t offset, int whence)
   {
     switch (whence)

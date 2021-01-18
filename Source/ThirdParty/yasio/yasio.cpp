@@ -1,11 +1,11 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store
-// universal app
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
+// client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2020 HALX99
+Copyright (c) 2012-2021 HALX99
 
 HAL: Hardware Abstraction Layer
 X99: Intel X99 Mainboard Platform
@@ -35,19 +35,12 @@ SOFTWARE.
 #endif
 #include <limits>
 #include <sstream>
-#if defined(_WIN32)
-#  include <io.h>
-#  define YASIO_O_OPEN_FLAGS O_CREAT | O_RDWR | O_BINARY, S_IWRITE | S_IREAD
-#  define ftruncate _chsize
-#else
-#  include <unistd.h>
-#  define YASIO_O_OPEN_FLAGS O_CREAT | O_RDWR, S_IRWXU
-#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "yasio/detail/thread_name.hpp"
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 #  include "yasio/detail/ssl.hpp"
 #endif
 
@@ -79,7 +72,7 @@ SOFTWARE.
 #if !defined(YASIO_VERBOSE_LOG)
 #  define YASIO_KLOGV(fmt, ...) (void)0
 #else
-#  define YASIO_KLOGV(format, ...) YASIO_KLOG_CP(cprint(), YLOG_V, format, ##__VA_ARGS__)
+#  define YASIO_KLOGV(format, ...) YASIO_KLOG_CP(YLOG_V, format, ##__VA_ARGS__)
 #endif
 
 #define yasio__setbits(x, m) ((x) |= (m))
@@ -116,24 +109,21 @@ namespace inet
 {
 namespace
 {
-// event mask
 enum
-{
+{ // event mask
   YEM_POLLIN  = 1,
   YEM_POLLOUT = 2,
   YEM_POLLERR = 4,
 };
 
-// op mask
 enum
-{
+{ // op mask
   YOPM_OPEN  = 1,
   YOPM_CLOSE = 1 << 1,
 };
 
-// dns queries state
 enum : u_short
-{
+{ // dns queries state
   YDQS_READY = 1,
   YDQS_DIRTY,
   YDQS_INPROGRESS,
@@ -162,42 +152,6 @@ enum
   YCPF_SSL_HANDSHAKING = 1 << 25,
 };
 
-#if defined(_WIN32)
-const DWORD MS_VC_EXCEPTION = 0x406D1388;
-#  pragma pack(push, 8)
-typedef struct _yasio__thread_info {
-  DWORD dwType;     // Must be 0x1000.
-  LPCSTR szName;    // Pointer to name (in user addr space).
-  DWORD dwThreadID; // Thread ID (-1=caller thread).
-  DWORD dwFlags;    // Reserved for future use, must be zero.
-} yasio__thread_info;
-#  pragma pack(pop)
-static void yasio__set_thread_name(const char* threadName)
-{
-  yasio__thread_info info;
-  info.dwType     = 0x1000;
-  info.szName     = threadName;
-  info.dwThreadID = GetCurrentThreadId();
-  info.dwFlags    = 0;
-#  if !defined(__MINGW64__) && !defined(__MINGW32__)
-  __try
-  {
-    RaiseException(MS_VC_EXCEPTION, 0, sizeof(info) / sizeof(ULONG_PTR), (ULONG_PTR*)&info);
-  }
-  __except (EXCEPTION_EXECUTE_HANDLER)
-  {}
-#  endif
-}
-#elif defined(__APPLE__)
-#  define yasio__set_thread_name(name) pthread_setname_np(name)
-#elif defined(__linux__) && ((__GLIBC__ > 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ >= 12)))
-// These functions first appeared in glibc in version 2.12.
-// see: http://man7.org/linux/man-pages/man3/pthread_setname_np.3.html
-#  define yasio__set_thread_name(name) pthread_setname_np(pthread_self(), name)
-#else
-#  define yasio__set_thread_name(name)
-#endif
-
 namespace
 {
 // the minimal wait duration for select
@@ -216,7 +170,7 @@ struct yasio__global_state {
     auto cprint = [&]() -> const print_fn2_t& { return custom_print; };
     // for single core CPU, we set minimal wait duration to 10us by default
     yasio__min_wait_duration = std::thread::hardware_concurrency() > 1 ? 0LL : YASIO_MIN_WAIT_DURATION;
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND) && YASIO_SSL_BACKEND == 1
     if (OPENSSL_init_ssl(0, NULL) == 1)
       yasio__setbits(this->init_flags_, INITF_SSL);
 #endif
@@ -257,11 +211,11 @@ static yasio__global_state& yasio__shared_globals(const print_fn2_t& prt = nullp
 } // namespace
 
 /// highp_timer
-void highp_timer::async_wait(timer_cb_t cb) { this->service_.schedule_timer(this, std::move(cb)); }
-void highp_timer::cancel()
+void highp_timer::async_wait(io_service& service, timer_cb_t cb) { service.schedule_timer(this, std::move(cb)); }
+void highp_timer::cancel(io_service& service)
 {
   if (!expired())
-    this->service_.remove_timer(this);
+    service.remove_timer(this);
 }
 
 /// io_send_op
@@ -270,20 +224,25 @@ int io_send_op::perform(io_transport* transport, const void* buf, int n) { retur
 /// io_sendto_op
 int io_sendto_op::perform(io_transport* transport, const void* buf, int n) { return transport->write_cb_(buf, n, &destination_); }
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 void ssl_auto_handle::destroy()
 {
   if (ssl_)
   {
+#  if YASIO_SSL_BACKEND == 1
     ::SSL_shutdown(ssl_);
     ::SSL_free(ssl_);
+#  elif YASIO_SSL_BACKEND == 2
+    ::mbedtls_ssl_free(ssl_);
+    delete ssl_;
+#  endif
     ssl_ = nullptr;
   }
 }
 #endif
 
 /// io_channel
-io_channel::io_channel(io_service& service, int index) : timer_(service)
+io_channel::io_channel(io_service& service, int index) : io_base(), service_(service)
 {
   socket_            = std::make_shared<xxsocket>();
   state_             = io_base::state::CLOSED;
@@ -399,35 +358,23 @@ void io_channel::configure_address()
         ep.port(this->remote_port_);
   }
 }
-int io_channel::__builtin_decode_len(void* ud, int n)
+int io_channel::__builtin_decode_len(void* d, int n)
 {
-  if (lfb_.length_field_offset >= 0)
+  int loffset = uparams_.length_field_offset;
+  int lsize   = uparams_.length_field_length;
+  if (loffset >= 0)
   {
-    if (n >= (lfb_.length_field_offset + lfb_.length_field_length))
+    assert(lsize >= 1 && lsize <= YASIO_SSIZEOF(int));
+    int len = 0;
+    if (n >= (loffset + lsize))
     {
-      int32_t length = -1;
-      switch (lfb_.length_field_length)
-      {
-        case 4:
-          length = ntohl(*reinterpret_cast<int32_t*>((unsigned char*)ud + lfb_.length_field_offset)) + lfb_.length_adjustment;
-          break;
-        case 3:
-          length = 0;
-          memcpy(&length, (unsigned char*)ud + lfb_.length_field_offset, 3);
-          length = (ntohl(length) >> 8) + lfb_.length_adjustment;
-          break;
-        case 2:
-          length = ntohs(*reinterpret_cast<uint16_t*>((unsigned char*)ud + lfb_.length_field_offset)) + lfb_.length_adjustment;
-          break;
-        case 1:
-          length = *((unsigned char*)ud + lfb_.length_field_offset) + lfb_.length_adjustment;
-          break;
-      }
-      if (length > lfb_.max_frame_length)
-        length = -1;
-      return length;
+      ::memcpy(&len, (uint8_t*)d + loffset, lsize);
+      len = yasio::network_to_host(len, lsize);
+      len += uparams_.length_adjustment;
+      if (len > uparams_.max_frame_length)
+        len = -1;
     }
-    return 0;
+    return len;
   }
   return n;
 }
@@ -450,7 +397,7 @@ int io_transport::write(std::vector<char>&& buffer, completion_cb_t&& handler)
   get_service().interrupt();
   return n;
 }
-int io_transport::do_read(int revent, int& error, highp_time_t&) { return revent ? this->call_read(buffer_ + wpos_, sizeof(buffer_) - wpos_, error) : 0; }
+int io_transport::do_read(int revent, int& error, highp_time_t&) { return revent ? this->call_read(buffer_ + offset_, sizeof(buffer_) - offset_, error) : 0; }
 bool io_transport::do_write(highp_time_t& wait_duration)
 {
   bool ret = false;
@@ -504,7 +451,7 @@ int io_transport::call_read(void* data, int size, int& error)
   if (n < 0)
   {
     error = xxsocket::get_last_errno();
-    if (!YASIO__RECV_FAIL(error))
+    if (xxsocket::not_recv_error(error))
       return (error = 0); // status ok, clear error
     return n;
   }
@@ -528,10 +475,11 @@ int io_transport::call_write(io_send_op* op, int& error)
   else if (n < 0)
   {
     error = xxsocket::get_last_errno();
-    if (!YASIO__SEND_FAIL(error))
+    if (xxsocket::not_send_error(error))
       n = 0;
     else if (yasio__testbits(ctx_->properties_, YCM_UDP))
-    { // UDP: don't cause handle_close, simply drop the op
+    { // !!! For udp, simply drop the op instead trigger handle close,
+      // on android device, the error will be 'EPERM' when app in background.
       this->complete_op(op, error);
       n = 0;
     }
@@ -553,7 +501,7 @@ void io_transport::set_primitives()
 // -------------------- io_transport_tcp ---------------------
 inline io_transport_tcp::io_transport_tcp(io_channel* ctx, std::shared_ptr<xxsocket>& s) : io_transport(ctx, s) {}
 // ----------------------- io_transport_ssl ----------------
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 io_transport_ssl::io_transport_ssl(io_channel* ctx, std::shared_ptr<xxsocket>& s) : io_transport_tcp(ctx, s), ssl_(std::move(ctx->ssl_))
 {
   yasio__clearbits(ctx->properties_, YCPF_SSL_HANDSHAKING);
@@ -561,6 +509,7 @@ io_transport_ssl::io_transport_ssl(io_channel* ctx, std::shared_ptr<xxsocket>& s
 void io_transport_ssl::set_primitives()
 {
   this->read_cb_ = [=](void* data, int len) {
+#  if YASIO_SSL_BACKEND == 1
     ERR_clear_error();
     int n = ::SSL_read(ssl_, data, len);
     if (n > 0)
@@ -582,8 +531,31 @@ void io_transport_ssl::set_primitives()
         xxsocket::set_last_errno(yasio::errc::ssl_read_failed);
     }
     return n;
+#  elif YASIO_SSL_BACKEND == 2
+    auto ssl = static_cast<SSL*>(ssl_);
+    int n    = ::mbedtls_ssl_read(ssl, static_cast<uint8_t*>(data), len);
+    if (n > 0)
+      return n;
+    switch (n)
+    {
+      case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY: // n=0, the upper caller will regards as eof
+        n = 0;
+      case 0:
+        ::mbedtls_ssl_close_notify(ssl);
+        break;
+      case MBEDTLS_ERR_SSL_WANT_READ:
+      case MBEDTLS_ERR_SSL_WANT_WRITE:
+        if (xxsocket::get_last_errno() != EWOULDBLOCK)
+          xxsocket::set_last_errno(EWOULDBLOCK);
+        break;
+      default:
+        xxsocket::set_last_errno(yasio::errc::ssl_read_failed);
+    }
+    return n;
+#  endif
   };
   this->write_cb_ = [=](const void* data, int len, const ip::endpoint*) {
+#  if YASIO_SSL_BACKEND == 1
     ERR_clear_error();
     int n = ::SSL_write(ssl_, data, len);
     if (n > 0)
@@ -594,15 +566,27 @@ void io_transport_ssl::set_primitives()
     {
       case SSL_ERROR_WANT_READ:
       case SSL_ERROR_WANT_WRITE:
-        /* The operation did not complete; the same TLS/SSL I/O function
-           should be called again later. This is basically an EWOULDBLOCK
-           equivalent. */
         if (xxsocket::get_last_errno() != EWOULDBLOCK)
           xxsocket::set_last_errno(EWOULDBLOCK);
         break;
       default:
         xxsocket::set_last_errno(yasio::errc::ssl_write_failed);
     }
+#  elif YASIO_SSL_BACKEND == 2
+    int n = ::mbedtls_ssl_write(static_cast<SSL*>(ssl_), static_cast<const uint8_t*>(data), len);
+    if (n > 0)
+      return n;
+    switch (n)
+    {
+      case MBEDTLS_ERR_SSL_WANT_READ:
+      case MBEDTLS_ERR_SSL_WANT_WRITE:
+        if (xxsocket::get_last_errno() != EWOULDBLOCK)
+          xxsocket::set_last_errno(EWOULDBLOCK);
+        break;
+      default:
+        xxsocket::set_last_errno(yasio::errc::ssl_write_failed);
+    }
+#  endif
     return -1;
   };
 }
@@ -675,7 +659,7 @@ void io_transport_udp::set_primitives()
       if (n < 0)
       {
         auto error = xxsocket::get_last_errno();
-        if (YASIO__SEND_FAIL(error))
+        if (!xxsocket::not_send_error(error))
           YASIO_KLOGI("[index: %d] write udp socket failed, ec=%d, detail:%s", this->cindex(), error, io_service::strerror(error));
       }
       return n;
@@ -727,7 +711,7 @@ int io_transport_kcp::do_read(int revent, int& error, highp_time_t& wait_duratio
     this->handle_input(rawbuf_.data(), n, error, wait_duration);
   if (!error)
   { // !important, should always try to call ikcp_recv when no error occured.
-    n = ::ikcp_recv(kcp_, buffer_ + wpos_, sizeof(buffer_) - wpos_);
+    n = ::ikcp_recv(kcp_, buffer_ + offset_, sizeof(buffer_) - offset_);
     if (n > 0) // If got data from kcp, don't wait
       wait_duration = yasio__min_wait_duration;
     else if (n < 0)
@@ -778,6 +762,7 @@ void io_transport_kcp::check_timeout(highp_time_t& wait_duration) const
 // ------------------------ io_service ------------------------
 void io_service::init_globals(const yasio::inet::print_fn2_t& prt) { yasio__shared_globals(prt).cprint_ = prt; }
 void io_service::cleanup_globals() { yasio__shared_globals().cprint_ = nullptr; }
+uint32_t io_service::tcp_rtt(transport_handle_t transport) { return transport->is_open() ? transport->socket_->tcp_rtt() : 0; }
 io_service::io_service() { this->init(nullptr, 1); }
 io_service::io_service(int channel_count) { this->init(nullptr, channel_count); }
 io_service::io_service(const io_hostent& channel_ep) { this->init(&channel_ep, 1); }
@@ -909,7 +894,7 @@ void io_service::clear_channels()
   this->channel_ops_.clear();
   for (auto channel : channels_)
   {
-    channel->timer_.cancel();
+    channel->timer_.cancel(*this);
     cleanup_io(channel);
     delete channel;
   }
@@ -932,9 +917,9 @@ void io_service::dispatch(int max_count)
 }
 void io_service::run()
 {
-  yasio__set_thread_name("yasio");
+  yasio::set_thread_name("yasio");
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
   init_ssl_context();
 #endif
 #if defined(YASIO_HAVE_CARES)
@@ -996,7 +981,7 @@ _L_end:
 #if defined(YASIO_HAVE_CARES)
   destroy_ares_channel();
 #endif
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
   cleanup_ssl_context();
 #endif
 }
@@ -1120,7 +1105,6 @@ void io_service::open(size_t index, int kind)
     open_internal(ctx);
   }
 }
-uint32_t io_service::tcp_rtt(transport_handle_t transport) { return transport->is_open() ? transport->socket_->tcp_rtt() : 0; }
 io_channel* io_service::channel_at(size_t index) const { return (index < channels_.size()) ? channels_[index] : nullptr; }
 void io_service::handle_close(transport_handle_t thandle)
 {
@@ -1255,7 +1239,7 @@ void io_service::do_nonblocking_connect(io_channel* ctx)
         ctx->set_last_errno(EINPROGRESS);
         register_descriptor(ctx->socket_->native_handle(), YEM_POLLIN | YEM_POLLOUT);
         ctx->timer_.expires_from_now(std::chrono::microseconds(options_.connect_timeout_));
-        ctx->timer_.async_wait_once([this, ctx]() {
+        ctx->timer_.async_wait_once(*this, [this, ctx]() {
           if (ctx->state_ != io_base::state::OPEN)
             handle_connect_failed(ctx, ETIMEDOUT);
         });
@@ -1276,7 +1260,7 @@ void io_service::do_nonblocking_connect_completion(io_channel* ctx, fd_set* fds_
   assert(ctx->state_ == io_base::state::OPENING && yasio__testbits(ctx->properties_, YCM_TCP) && yasio__testbits(ctx->properties_, YCM_CLIENT));
   if (ctx->state_ == io_base::state::OPENING)
   {
-#if !defined(YASIO_HAVE_SSL)
+#if !defined(YASIO_SSL_BACKEND)
     int error = -1;
     if (FD_ISSET(ctx->socket_->native_handle(), &fds_array[write_op]) || FD_ISSET(ctx->socket_->native_handle(), &fds_array[read_op]))
     {
@@ -1289,7 +1273,7 @@ void io_service::do_nonblocking_connect_completion(io_channel* ctx, fd_set* fds_
       else
         handle_connect_failed(ctx, error);
 
-      ctx->timer_.cancel();
+      ctx->timer_.cancel(*this);
     }
 #else
     if (!yasio__testbits(ctx->properties_, YCPF_SSL_HANDSHAKING))
@@ -1314,53 +1298,88 @@ void io_service::do_nonblocking_connect_completion(io_channel* ctx, fd_set* fds_
       do_ssl_handshake(ctx);
 
     if (ctx->state_ != io_base::state::OPENING)
-      ctx->timer_.cancel();
+      ctx->timer_.cancel(*this);
 #endif
   }
 }
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 void io_service::init_ssl_context()
 {
-#  if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
+#  if YASIO_SSL_BACKEND == 1
+#    if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
   auto req_method = ::TLS_client_method();
-#  else
+#    else
   auto req_method = ::SSLv23_client_method();
-#  endif
+#    endif
   ssl_ctx_ = ::SSL_CTX_new(req_method);
 
-#  if defined(SSL_MODE_RELEASE_BUFFERS)
+#    if defined(SSL_MODE_RELEASE_BUFFERS)
   ::SSL_CTX_set_mode(ssl_ctx_, SSL_MODE_RELEASE_BUFFERS);
-#  endif
+#    endif
 
   ::SSL_CTX_set_mode(ssl_ctx_, SSL_MODE_ENABLE_PARTIAL_WRITE);
-  if (!this->options_.capath_.empty())
+  if (!this->options_.cafile_.empty())
   {
-    if (::SSL_CTX_load_verify_locations(ssl_ctx_, this->options_.capath_.c_str(), nullptr) == 1)
+    if (::SSL_CTX_load_verify_locations(ssl_ctx_, this->options_.cafile_.c_str(), nullptr) == 1)
     {
       ::SSL_CTX_set_verify(ssl_ctx_, SSL_VERIFY_PEER, ::SSL_CTX_get_verify_callback(ssl_ctx_));
-#  if defined(YASIO_HAVE_SSL_CTX_SET_POST_HANDSHAKE_AUTH)
+#    if OPENSSL_VERSION_NUMBER >= 0x10101000L
       ::SSL_CTX_set_post_handshake_auth(ssl_ctx_, 1);
-#  endif
-#  if defined(X509_V_FLAG_PARTIAL_CHAIN)
+#    endif
+#    if defined(X509_V_FLAG_PARTIAL_CHAIN)
       /* Have intermediate certificates in the trust store be treated as
          trust-anchors, in the same way as self-signed root CA certificates
          are. This allows users to verify servers using the intermediate cert
          only, instead of needing the whole chain. */
       X509_STORE_set_flags(SSL_CTX_get_cert_store(ssl_ctx_), X509_V_FLAG_PARTIAL_CHAIN);
-#  endif
+#    endif
     }
     else
       YASIO_KLOGE("[global] load ca certifaction file failed!");
   }
   else
     SSL_CTX_set_verify(ssl_ctx_, SSL_VERIFY_NONE, nullptr);
+#  elif YASIO_SSL_BACKEND == 2
+  const char* pers = "yasio_ssl_client";
+  ssl_ctx_ = new SSL_CTX();
+  ::mbedtls_ssl_config_init(&ssl_ctx_->conf);
+  ::mbedtls_x509_crt_init(&ssl_ctx_->cacert);
+  ::mbedtls_ctr_drbg_init(&ssl_ctx_->ctr_drbg);
+  ::mbedtls_entropy_init(&ssl_ctx_->entropy);
+  int ret = ::mbedtls_ctr_drbg_seed(&ssl_ctx_->ctr_drbg, ::mbedtls_entropy_func, &ssl_ctx_->entropy, (const unsigned char*)pers, strlen(pers));
+  if (ret != 0)
+    YASIO_KLOGE("mbedtls_ctr_drbg_seed fail with ret=%d", ret);
+
+  int authmode = MBEDTLS_SSL_VERIFY_OPTIONAL;
+  if (!this->options_.cafile_.empty()) // the cafile_ must be full path
+  {
+    if ((ret = ::mbedtls_x509_crt_parse_file(&ssl_ctx_->cacert, this->options_.cafile_.c_str())) == 0)
+      authmode = MBEDTLS_SSL_VERIFY_REQUIRED;
+    else
+      YASIO_KLOGE("mbedtls_x509_crt_parse_file with ret=-0x%x", (unsigned int)-ret);
+  }
+
+  if ((ret = ::mbedtls_ssl_config_defaults(&ssl_ctx_->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) != 0)
+    YASIO_KLOGE("mbedtls_ssl_config_defaults fail with ret=%d", ret);
+
+  ::mbedtls_ssl_conf_authmode(&ssl_ctx_->conf, authmode);
+  ::mbedtls_ssl_conf_ca_chain(&ssl_ctx_->conf, &ssl_ctx_->cacert, nullptr);
+  ::mbedtls_ssl_conf_rng(&ssl_ctx_->conf, ::mbedtls_ctr_drbg_random, &ssl_ctx_->ctr_drbg);
+#  endif
 }
-SSL_CTX* io_service::get_ssl_context() { return ssl_ctx_; }
 void io_service::cleanup_ssl_context()
 {
   if (ssl_ctx_)
   {
+#  if YASIO_SSL_BACKEND == 1
     SSL_CTX_free((SSL_CTX*)ssl_ctx_);
+#  elif YASIO_SSL_BACKEND == 2
+    ::mbedtls_x509_crt_free(&ssl_ctx_->cacert);
+    ::mbedtls_ssl_config_free(&ssl_ctx_->conf);
+    ::mbedtls_ctr_drbg_free(&ssl_ctx_->ctr_drbg);
+    ::mbedtls_entropy_free(&ssl_ctx_->entropy);
+    delete ssl_ctx_;
+#  endif
     ssl_ctx_ = nullptr;
   }
 }
@@ -1368,16 +1387,21 @@ void io_service::do_ssl_handshake(io_channel* ctx)
 {
   if (!ctx->ssl_)
   {
-    auto ssl = ::SSL_new(get_ssl_context());
-    ::SSL_set_fd(ssl, ctx->socket_->native_handle());
+#  if YASIO_SSL_BACKEND == 1
+    auto ssl = ::SSL_new(ssl_ctx_);
+    ::SSL_set_fd(ssl, static_cast<int>(ctx->socket_->native_handle()));
     ::SSL_set_connect_state(ssl);
-
-    // !important, fix issue: https://github.com/yasio/yasio/issues/273
     ::SSL_set_tlsext_host_name(ssl, ctx->remote_host_.c_str());
+#  elif YASIO_SSL_BACKEND == 2
+    auto ssl = ::mbedtls_ssl_new(ssl_ctx_);
+    ::mbedtls_ssl_set_fd(ssl, static_cast<int>(ctx->socket_->native_handle()));
+    ::mbedtls_ssl_set_hostname(ssl, ctx->remote_host_.c_str());
+#  endif
     yasio__setbits(ctx->properties_, YCPF_SSL_HANDSHAKING); // start ssl handshake
     ctx->ssl_.reset(ssl);
   }
 
+#  if YASIO_SSL_BACKEND == 1
   int ret = ::SSL_do_handshake(ctx->ssl_);
   if (ret != 1)
   {
@@ -1408,6 +1432,32 @@ void io_service::do_ssl_handshake(io_channel* ctx)
   }
   else
     handle_connect_succeed(ctx, ctx->socket_);
+#  elif YASIO_SSL_BACKEND == 2
+  auto ssl = static_cast<SSL*>(ctx->ssl_);
+  int ret = ::mbedtls_ssl_handshake_step(ssl);
+  if (ret == 0)
+  {
+    if (ssl->state != MBEDTLS_SSL_HANDSHAKE_OVER)
+      interrupt();
+    else // mbedtls_ssl_get_verify_result return 0 when valid cacert provided
+      handle_connect_succeed(ctx, ctx->socket_);
+  }
+  else
+  {
+    char errstring[256] = {0};
+    switch (ret)
+    {
+      case MBEDTLS_ERR_SSL_WANT_READ:
+      case MBEDTLS_ERR_SSL_WANT_WRITE:
+        break; // Nothing need to do
+      default:
+        ::mbedtls_strerror(ret, errstring, sizeof(errstring));
+        YASIO_KLOGE("[index: %d] mbedtls_ssl_handshake_step fail with ret=%d, detail:%s", ctx->index_, ret, errstring);
+        ctx->ssl_.destroy();
+        handle_connect_failed(ctx, yasio::errc::ssl_handshake_failed);
+    }
+  }
+#  endif
 }
 #endif
 #if defined(YASIO_HAVE_CARES)
@@ -1635,7 +1685,7 @@ void io_service::do_nonblocking_accept_completion(io_channel* ctx, fd_set* fds_a
         else if (n < 0)
         {
           error = xxsocket::get_last_errno();
-          if (YASIO__RECV_FAIL(error))
+          if (!xxsocket::not_recv_error(error))
             YASIO_KLOGE("[index: %d] recvfrom failed, ec=%d, detail:%s", ctx->index_, error, this->strerror(error));
         }
       }
@@ -1724,7 +1774,7 @@ transport_handle_t io_service::allocate_transport(io_channel* ctx, std::shared_p
   {
     if (yasio__testbits(ctx->properties_, YCM_TCP))
     { // tcp like transport
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
       if (yasio__unlikely(yasio__testbits(ctx->properties_, YCM_SSL)))
       {
         transport = new (vp) io_transport_ssl(ctx, socket);
@@ -1777,20 +1827,20 @@ bool io_service::do_read(transport_handle_t transport, fd_set* fds_array)
     int n      = transport->do_read(revent, error, this->wait_duration_);
     if (n >= 0)
     {
-      YASIO_KLOGV("[index: %d] do_read status ok, bytes transferred: %d, buffer used: %d", transport->cindex(), n, n + transport->wpos_);
+      YASIO_KLOGV("[index: %d] do_read status ok, bytes transferred: %d, buffer used: %d", transport->cindex(), n, n + transport->offset_);
       if (transport->expected_size_ == -1)
       { // decode length
-        int length = transport->ctx_->decode_len_(transport->buffer_, transport->wpos_ + n);
+        int length = transport->ctx_->decode_len_(transport->buffer_, transport->offset_ + n);
         if (length > 0)
         {
-          int bytes_to_strip        = ::yasio::clamp(transport->ctx_->lfb_.initial_bytes_to_strip, 0, length - 1);
+          int bytes_to_strip        = ::yasio::clamp(transport->ctx_->uparams_.initial_bytes_to_strip, 0, length - 1);
           transport->expected_size_ = length;
           transport->expected_packet_.reserve((std::min)(length - bytes_to_strip,
                                                          YASIO_MAX_PDU_BUFFER_SIZE)); // #perfomance, avoid memory reallocte.
           unpack(transport, transport->expected_size_, n, bytes_to_strip);
         }
         else if (length == 0) // header insufficient, wait readfd ready at next event frame.
-          transport->wpos_ += n;
+          transport->offset_ += n;
         else
         {
           transport->set_last_errno(yasio::errc::invalid_packet, yasio::net::io_base::error_stage::READ);
@@ -1815,17 +1865,18 @@ bool io_service::do_read(transport_handle_t transport, fd_set* fds_array)
 }
 void io_service::unpack(transport_handle_t transport, int bytes_expected, int bytes_transferred, int bytes_to_strip)
 {
-  auto bytes_available = bytes_transferred + transport->wpos_;
+  auto& offset         = transport->offset_;
+  auto bytes_available = bytes_transferred + offset;
   transport->expected_packet_.insert(transport->expected_packet_.end(), transport->buffer_ + bytes_to_strip,
                                      transport->buffer_ + (std::min)(bytes_expected, bytes_available));
 
-  // set wpos to bytes of remain buffer
-  transport->wpos_ = bytes_available - bytes_expected;
-  if (transport->wpos_ >= 0)
+  // set 'offset' to bytes of remain buffer
+  offset = bytes_available - bytes_expected;
+  if (offset >= 0)
   { /* pdu received properly */
-    if (transport->wpos_ > 0)
-    { /* move remain data to head of buffer and hold wpos. */
-      ::memmove(transport->buffer_, transport->buffer_ + bytes_expected, transport->wpos_);
+    if (offset > 0)
+    { /* move remain data to head of buffer and hold 'offset'. */
+      ::memmove(transport->buffer_, transport->buffer_ + bytes_expected, offset);
       this->wait_duration_ = yasio__min_wait_duration;
     }
     // move properly pdu to ready queue, the other thread who care about will retrieve it.
@@ -1834,18 +1885,18 @@ void io_service::unpack(transport_handle_t transport, int bytes_expected, int by
                 transport->cindex(), transport->expected_size_);
     this->handle_event(event_ptr(new io_event(transport->cindex(), YEK_PACKET, transport, transport->fetch_packet())));
   }
-  else /* all buffer consumed, set wpos to ZERO, pdu incomplete, continue recv remain data. */
-    transport->wpos_ = 0;
+  else /* all buffer consumed, set 'offset' to ZERO, pdu incomplete, continue recv remain data. */
+    offset = 0;
 }
 highp_timer_ptr io_service::schedule(const std::chrono::microseconds& duration, timer_cb_t cb)
 {
-  auto timer = std::make_shared<highp_timer>(*this);
+  auto timer = std::make_shared<highp_timer>();
   timer->expires_from_now(duration);
   /*!important, hold on `timer` by lambda expression */
 #if YASIO__HAS_CXX14
-  timer->async_wait([timer, cb = std::move(cb)]() { return cb(); });
+  timer->async_wait(*this, [timer, cb = std::move(cb)]() { return cb(); });
 #else
-  timer->async_wait([timer, cb]() { return cb(); });
+  timer->async_wait(*this, [timer, cb]() { return cb(); });
 #endif
   return timer;
 }
@@ -2162,9 +2213,9 @@ void io_service::set_option_internal(int opt, va_list ap) // lgtm [cpp/poorly-do
     case YOPT_S_NO_NEW_THREAD:
       this->options_.no_new_thread_ = !!va_arg(ap, int);
       break;
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
     case YOPT_S_SSL_CACERT:
-      this->options_.capath_ = va_arg(ap, const char*);
+      this->options_.cafile_ = va_arg(ap, const char*);
       break;
 #endif
     case YOPT_S_CONNECT_TIMEOUT:
@@ -2183,21 +2234,21 @@ void io_service::set_option_internal(int opt, va_list ap) // lgtm [cpp/poorly-do
     case YOPT_S_DNS_DIRTY:
       options_.dns_dirty_ = true;
       break;
-    case YOPT_C_LFBFD_PARAMS: {
+    case YOPT_C_UNPACK_PARAMS: {
       auto channel = channel_at(static_cast<size_t>(va_arg(ap, int)));
       if (channel)
       {
-        channel->lfb_.max_frame_length    = va_arg(ap, int);
-        channel->lfb_.length_field_offset = va_arg(ap, int);
-        channel->lfb_.length_field_length = va_arg(ap, int);
-        channel->lfb_.length_adjustment   = va_arg(ap, int);
+        channel->uparams_.max_frame_length    = va_arg(ap, int);
+        channel->uparams_.length_field_offset = va_arg(ap, int);
+        channel->uparams_.length_field_length = yasio::clamp(va_arg(ap, int), YASIO_SSIZEOF(int8_t), YASIO_SSIZEOF(int));
+        channel->uparams_.length_adjustment   = va_arg(ap, int);
       }
       break;
     }
-    case YOPT_C_LFBFD_IBTS: {
+    case YOPT_C_UNPACK_STRIP: {
       auto channel = channel_at(static_cast<size_t>(va_arg(ap, int)));
       if (channel)
-        channel->lfb_.initial_bytes_to_strip = ::yasio::clamp(va_arg(ap, int), 0, YASIO_MAX_IBTS);
+        channel->uparams_.initial_bytes_to_strip = yasio::clamp(va_arg(ap, int), 0, YASIO_UPARAMS_MAX_STRIP);
       break;
     }
     case YOPT_S_EVENT_CB:
