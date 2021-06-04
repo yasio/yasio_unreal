@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "3.37.1",
+	"FriendlyName": "yasio",
+	"Description": "yasio for unreal4",
+	"Category": "Other",
+	"CreatedBy": "Siney",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+    {
+      "Name": "yasio",
+      "Type": "Runtime",
+      "LoadingPhase": "PreLoadingScreen"
+    }
+	] 
+}
