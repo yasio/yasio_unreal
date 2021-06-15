@@ -4,9 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "yasio/yasio_fwd.hpp"
+
 #include "YAsioSampleActor.generated.h"
 
-#include "yasio/yasio_fwd.hpp"
 
 UCLASS()
 class YASIOSAMPLE_API AYAsioSampleActor : public AActor
