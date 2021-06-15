@@ -6,11 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "YAsioSampleActor.generated.h"
 
-namespace yasio {
-	namespace inet {
-		class io_service;
-	}
-}
+#include "yasio/yasio_fwd.hpp"
 
 UCLASS()
 class YASIOSAMPLE_API AYAsioSampleActor : public AActor
