@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "3.37.1",
+	"VersionName": "3.37.2",
 	"FriendlyName": "yasio",
-	"Description": "yasio for unreal4",
+	"Description": "yasio for unreal engine",
 	"Category": "Other",
 	"CreatedBy": "Siney",
 	"CreatedByURL": "",
