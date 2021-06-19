@@ -69,7 +69,7 @@ SOFTWARE.
 #  endif
 #endif
 
-#if YASIO_LITTLE_ENDIAN
+#if defined(YASIO_LITTLE_ENDIAN)
 // clang-format off
 #  define YASIO__SWAP_SHORT(s) s = ((((s) >> 8) & 0x00ff) | (((s) << 8) & 0xff00))
 /*
