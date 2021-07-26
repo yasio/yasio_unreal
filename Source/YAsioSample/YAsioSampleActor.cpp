@@ -10,8 +10,8 @@
 using namespace yasio;
 using namespace yasio::inet;
 
-DECLARE_LOG_CATEGORY_EXTERN(yasio_ue4, Log, All);
-DEFINE_LOG_CATEGORY(yasio_ue4);
+DECLARE_LOG_CATEGORY_EXTERN(yasio_sample, Log, All);
+DEFINE_LOG_CATEGORY(yasio_sample);
 
 // Sets default values
 AYAsioSampleActor::AYAsioSampleActor()
@@ -63,7 +63,7 @@ void AYAsioSampleActor::StartYAsioService()
             packet.push_back('\0');
             FString text(UTF8_TO_TCHAR(packet.data()));
             const TCHAR* tstr = *text;
-            UE_LOG(yasio_ue4, Log, TEXT("%s"), tstr);
+            UE_LOG(yasio_sample, Log, TEXT("%s"), tstr);
             break;
         }
         case YEK_CONNECT_RESPONSE:
