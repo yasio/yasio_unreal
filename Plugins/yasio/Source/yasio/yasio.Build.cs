@@ -35,7 +35,7 @@ public class yasio : ModuleRules
 			);
 
 		PublicDefinitions.Add("YASIO_SSL_BACKEND=1");
-		PublicDefinitions.Add("YASIO_BUILD_AS_SHARED=1");
+		PublicDefinitions.Add("YASIO_BUILD_SHARED_LIBS=1");
 		PrivateDefinitions.Add("YASIO_LIB=1");
 	}
 }

@@ -167,6 +167,10 @@ enum
   // remarks: you should set this option after your device network changed
   YOPT_S_DNS_DIRTY,
 
+  // Set custom dns servers
+  // params: servers: const char*("xxx.xxx.xxx[:port],xxx.xxx.xxx.xxx[:port]")
+  YOPT_S_DNS_LIST,
+
   // Sets channel length field based frame decode function, native C++ ONLY
   // params: index:int, func:decode_len_fn_t*
   YOPT_C_LFBFD_FN = 101,
@@ -296,6 +300,7 @@ enum
   YLOG_V,
   YLOG_D,
   YLOG_I,
+  YLOG_W,
   YLOG_E,
 };
 
@@ -852,9 +857,14 @@ public:
 
 #if !defined(YASIO_MINIFY_EVENT)
   /* Gets to transport user data when process this event */
-  template <typename _Uty = void*> _Uty transport_ud() const { return (_Uty)(uintptr_t)source_ud_; }
+  template <typename _Uty = void*>
+  _Uty transport_ud() const
+  {
+    return (_Uty)(uintptr_t)source_ud_;
+  }
   /* Sets trasnport user data when process this event */
-  template <typename _Uty = void*> void transport_ud(_Uty uval)
+  template <typename _Uty = void*>
+  void transport_ud(_Uty uval)
   {
     source_ud_ = (void*)(uintptr_t)uval;
 
@@ -1181,6 +1191,10 @@ private:
 #if defined(YASIO_SSL_BACKEND)
     // The full path cacert(.pem) file for ssl verifaction
     std::string cafile_;
+#endif
+
+#if defined(YASIO_HAVE_CARES)
+    std::string name_servers_;
 #endif
   } options_;
 
