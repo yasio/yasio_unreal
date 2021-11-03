@@ -1,7 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 // A multi-platform support c++11 library with focus on asynchronous socket I/O for any
 // client application.
-//
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
@@ -104,6 +103,8 @@ typedef int socket_native_type;
 
 #include <fcntl.h> // common platform header
 
+#include "yasio/detail/endian_portable.hpp"
+
 // redefine socket error code for posix api
 #ifdef _WIN32
 #  undef EWOULDBLOCK
@@ -195,7 +196,17 @@ typedef int socket_native_type;
 
 #define IN_MAX_ADDRSTRLEN INET6_ADDRSTRLEN
 
-#if !defined(_WS2IPDEF_)
+// Workaround for older MinGW missing AI_XXX macros
+#if defined(__MINGW32__)
+#  if !defined(AI_ALL)
+#    define AI_ALL 0x00000100
+#  endif
+#  if !defined(AI_V4MAPPED)
+#    define AI_V4MAPPED 0x00000800
+#  endif
+#endif
+
+#if !defined(_WS2IPDEF_) || defined(__MINGW32__)
 inline bool IN4_IS_ADDR_LOOPBACK(const in_addr* a)
 {
   return ((a->s_addr & 0xff) == 0x7f); // 127/8
