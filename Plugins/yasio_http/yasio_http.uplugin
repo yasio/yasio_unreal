@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "3.39.2",
+	"FriendlyName": "yasio_http",
+	"Description": "yasio_http for unreal engine",
+	"Category": "Other",
+	"CreatedBy": "halx99",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+    {
+      "Name": "yasio_http",
+      "Type": "Runtime",
+      "LoadingPhase": "PreLoadingScreen"
+    }
+	],
+    "Plugins": [
+        {
+          "Name": "yasio",
+          "Enabled": true
+        }
+    ]
+}
