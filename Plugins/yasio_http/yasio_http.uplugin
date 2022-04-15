@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "3.39.2",
+	"VersionName": "3.39.4",
 	"FriendlyName": "yasio_http",
 	"Description": "yasio_http for unreal engine",
 	"Category": "Other",
