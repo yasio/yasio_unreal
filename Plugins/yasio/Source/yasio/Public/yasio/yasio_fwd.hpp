@@ -5,7 +5,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2022 HALX99
+Copyright (c) 2012-2024 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -40,7 +40,7 @@ class io_event;
 class io_channel;
 typedef class io_transport* transport_handle_t;
 } // namespace inet
-#if !YASIO__HAS_NS_INLINE
+#if !YASIO__HAS_CXX11
 using namespace yasio::inet;
 #endif
 } // namespace yasio

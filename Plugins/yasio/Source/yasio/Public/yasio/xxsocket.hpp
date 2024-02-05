@@ -5,7 +5,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2022 HALX99
+Copyright (c) 2012-2024 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -38,13 +38,9 @@ SOFTWARE.
 #include <chrono>
 #include <functional>
 #include <memory>
-#include "yasio/detail/socket.hpp"
-#include "yasio/detail/logging.hpp"
-
-#if defined(_MSC_VER)
-#  pragma warning(push)
-#  pragma warning(disable : 4996)
-#endif
+#include "yasio/impl/socket.hpp"
+#include "yasio/logging.hpp"
+#include "yasio/string_view.hpp"
 
 namespace yasio
 {
@@ -62,7 +58,7 @@ namespace ip
 {
 #pragma pack(push, 1)
 // ip packet
-struct ip_header {
+struct ip_hdr_st {
   // header size; 5+
   unsigned char header_length : 4;
 
@@ -106,7 +102,7 @@ struct ip_header {
   unsigned char protocol; // TCP / UDP / Other
 
   // check header of IP-PACKET 's correctness.
-  unsigned short checksum;
+  unsigned short sum;
 
   typedef union {
     unsigned int value;
@@ -122,7 +118,7 @@ struct ip_header {
   dotted_decimal_t dst_ip;
 };
 
-struct psd_header {
+struct psd_hdr_st {
   unsigned long src_addr;
   unsigned long dst_addr;
   char mbz;
@@ -130,7 +126,7 @@ struct psd_header {
   unsigned short tcp_length;
 };
 
-struct tcp_header {
+struct tcp_hdr_st {
   unsigned short src_port; // lgtm [cpp/class-many-fields]
   unsigned short dst_port;
   unsigned int seqno;
@@ -139,32 +135,32 @@ struct tcp_header {
   unsigned char reserved : 4;
   unsigned char flg_fin : 1, flg_syn : 1, flg_rst : 1, flg_psh : 1, flg_ack : 1, flg_urg : 1, flg_reserved : 2;
   unsigned short win_length;
-  unsigned short checksum;
+  unsigned short sum;
   unsigned short urp;
 };
 
-struct udp_header {
+struct udp_hdr_st {
   unsigned short src_port;
   unsigned short dst_port;
   unsigned short length;
-  unsigned short checksum;
+  unsigned short sum;
 };
 
-struct icmp_header {
-  unsigned char type;      // 8bit type
-  unsigned char code;      // 8bit code
-  unsigned short checksum; // 16bit check sum
-  unsigned short id;       // identifier: usually use process id
-  unsigned short seqno;    // message sequence NO.
+struct icmp_hdr_st {
+  unsigned char type;   // 8bit type
+  unsigned char code;   // 8bit code
+  unsigned short sum;   // 16bit check sum
+  unsigned short id;    // identifier: usually use process id
+  unsigned short seqno; // message sequence NO.
 };
 
-struct eth_header {
+struct eth_hdr_st {
   unsigned dst_eth[6];
   unsigned src_eth[6];
   unsigned eth_type;
 };
 
-struct arp_header {
+struct arp_hdr_st {
   unsigned short arp_hw;    // format of hardware address
   unsigned short arp_pro;   // format of protocol address
   unsigned char arp_hlen;   // length of hardware address
@@ -176,9 +172,9 @@ struct arp_header {
   unsigned long arp_tpa;    // target protocol address;
 };
 
-struct arp_packet {
-  eth_header ethhdr;
-  arp_header arphdr;
+struct arp_packet_st {
+  eth_hdr_st ethhdr;
+  arp_hdr_st arphdr;
 };
 #pragma pack(pop)
 
@@ -196,7 +192,7 @@ YASIO__DECL int inet_pton(int af, const char* src, void* dst);
 inline bool is_global_in4_addr(const in_addr* addr) { return !IN4_IS_ADDR_LOOPBACK(addr) && !IN4_IS_ADDR_LINKLOCAL(addr); };
 inline bool is_global_in6_addr(const in6_addr* addr) { return !!IN6_IS_ADDR_GLOBAL(addr); };
 
-struct endpoint {
+struct endpoint final {
 public:
   enum
   {
@@ -212,8 +208,8 @@ public:
   static const size_t max_fmt_len = IN_MAX_ADDRSTRLEN + 2 /*[]*/ + sizeof("65535") /*:port*/;
 #endif
 
-  endpoint() { this->zeroset(); }
-  endpoint(const endpoint& rhs) { this->as_is(rhs); }
+  endpoint() { as_unspec(); }
+  endpoint(const endpoint& rhs) { as_is(rhs); }
   explicit endpoint(const addrinfo* info) { as_is(info); }
   explicit endpoint(const sockaddr* info) { as_is(info); }
   explicit endpoint(const char* str_ep) { as_is(str_ep); }
@@ -223,17 +219,26 @@ public:
 
   explicit operator bool() const { return this->af() != AF_UNSPEC; }
 
-  endpoint& operator=(const endpoint& rhs) { return this->as_is(rhs); }
+  friend bool operator<(const endpoint& lhs, const endpoint& rhs)
+  { // apply operator < to operands
+    if (lhs.af() == AF_INET)
+      return (static_cast<uint64_t>(lhs.in4_.sin_addr.s_addr) + lhs.in4_.sin_port) < (static_cast<uint64_t>(rhs.in4_.sin_addr.s_addr) + rhs.in4_.sin_port);
+    return ::memcmp(&lhs, &rhs, sizeof(rhs)) < 0;
+  }
+  friend bool operator==(const endpoint& lhs, const endpoint& rhs)
+  { // apply operator == to operands
+    return !(lhs < rhs) && !(rhs < lhs);
+  }
+
+  endpoint& operator=(const endpoint& rhs) { return as_is(rhs); }
   endpoint& as_is(const endpoint& rhs)
   {
-    this->zeroset();
     memcpy(this, &rhs, sizeof(rhs));
     return *this;
   }
-  endpoint& as_is(const addrinfo* info) { return this->as_is_raw(info->ai_addr, info->ai_addrlen); }
+  endpoint& as_is(const addrinfo* info) { return as_is_raw(info->ai_addr, info->ai_addrlen); }
   endpoint& as_is(const sockaddr* addr)
   {
-    this->zeroset();
     switch (addr->sa_family)
     {
       case AF_INET:
@@ -249,6 +254,8 @@ public:
         as_un(((sockaddr_un*)addr)->sun_path);
         break;
 #endif
+      default:
+        as_unspec();
     }
     return *this;
   }
@@ -268,6 +275,8 @@ public:
         auto zone_value = parse_in6_zone(ip, addr_part, sizeof(addr_part), rbracket);
         as_in6(ip, static_cast<u_short>(atoi(rbracket + 2)), zone_value);
       }
+      else
+        as_unspec();
     }
     else
     { // ipv4
@@ -279,12 +288,13 @@ public:
         addr_part[n] = '\0';
         as_in4(addr_part, static_cast<u_short>(atoi(colon + 1)));
       }
+      else
+        as_unspec();
     }
     return *this;
   }
   endpoint& as_in(int family, const void* addr_in, u_short port)
   {
-    this->zeroset();
     this->af(family);
     this->port(port);
     switch (family)
@@ -297,23 +307,21 @@ public:
         ::memcpy(&in6_.sin6_addr, addr_in, sizeof(in6_addr));
         this->len(sizeof(sockaddr_in6));
         break;
+      default:
+        as_unspec();
     }
     return *this;
   }
   endpoint& as_in(const char* ip, unsigned short port)
   {
-    this->zeroset();
-
     if (strchr(ip, ':'))
     { // ipv6
       char addr_part[IN_MAX_ADDRSTRLEN];
       auto zone_value = parse_in6_zone(ip, addr_part, sizeof(addr_part), nullptr);
       as_in6(ip, port, zone_value);
     }
-    else
-    { // ipv4
+    else // ipv4
       as_in4(ip, port);
-    }
 
     return *this;
   }
@@ -326,6 +334,8 @@ public:
       this->in6_.sin6_scope_id = scope_id;
       this->len(sizeof(sockaddr_in6));
     }
+    else
+      as_unspec();
   }
   void as_in4(const char* ip, unsigned short port)
   {
@@ -335,11 +345,11 @@ public:
       this->in4_.sin_port   = host_to_network(port);
       this->len(sizeof(sockaddr_in));
     }
+    else
+      as_unspec();
   }
   endpoint& as_in(uint32_t addr, u_short port)
   {
-    this->zeroset();
-
     this->addr_v4(addr);
     this->port(port);
     return *this;
@@ -348,30 +358,30 @@ public:
 #if defined(YASIO_ENABLE_UDS) && YASIO__HAS_UDS
   endpoint& as_un(const char* name)
   {
-    int n = snprintf(un_.sun_path, sizeof(un_.sun_path) - 1, "%s", name);
-    if (n > 0)
+    int n = snprintf(un_.sun_path, sizeof(un_.sun_path), "%s", name);
+    if (n > 0 && n < sizeof(un_.sun_path))
     {
       un_.sun_family = AF_UNIX;
       this->len(offsetof(struct sockaddr_un, sun_path) + n + 1);
     }
     else
-    {
-      un_.sun_family = AF_UNSPEC;
-      this->len(0);
-    }
+      as_unspec();
     return *this;
   }
 #endif
 
   endpoint& as_is_raw(const void* ai_addr, size_t ai_addrlen)
   {
-    this->zeroset();
     ::memcpy(this, ai_addr, ai_addrlen);
     this->len(ai_addrlen);
     return *this;
   }
 
-  void zeroset() { ::memset(this, 0x0, sizeof(*this)); }
+  void as_unspec()
+  {
+    this->af(AF_UNSPEC);
+    this->len(0);
+  }
 
   void af(int v) { sa_.sa_family = static_cast<u_short>(v); }
   int af() const { return sa_.sa_family; }
@@ -467,7 +477,9 @@ public:
    *    buf: the buffer to output
    *    buf_len: the buffer len, must be at least endpoint::max_fmt_len
    * @returns:
-   *    the number of character written to the buf without null-termianted charactor
+   *    The number of characters that would have been written if n had been sufficiently large, not counting the terminating null character.
+   *    If an encoding error occurs, a negative number is returned.
+   *    Notice that only when this returned value is non-negative and less than n, the string has been completely written.
    *
    * @remark:
    *   The buffer result should be
@@ -482,11 +494,11 @@ public:
       switch (af())
       {
         case AF_INET:
-          n = strlen(compat::inet_ntop(AF_INET, &in4_.sin_addr, buf, buf_len));
+          n = strlen(compat::inet_ntop(AF_INET, &in4_.sin_addr, buf, static_cast<socklen_t>(buf_len)));
           break;
         case AF_INET6:
           buf[n++] = '[';
-          n += strlen(compat::inet_ntop(AF_INET6, &in6_.sin6_addr, buf + n, buf_len - n));
+          n += strlen(compat::inet_ntop(AF_INET6, &in6_.sin6_addr, buf + n, static_cast<socklen_t>(buf_len - n)));
           buf[n++] = ']';
           break;
 #if defined(YASIO_ENABLE_UDS) && YASIO__HAS_UDS
@@ -505,7 +517,11 @@ public:
         {
           u_short p = this->port();
           if (!(flags & fmt_no_port_0) || p != 0)
-            n += sprintf(buf + n, ":%u", (unsigned int)p);
+          {
+            int np = snprintf(buf + n, buf_len - n, ":%u", (unsigned int)p);
+            if (np > 0)
+              n += np;
+          }
         }
       }
       return n;
@@ -538,7 +554,7 @@ public:
       auto offst = s.find(fmt);
       if (offst != std::string::npos)
       {
-        sprintf(snum, "%u", addr_bytes[idx]);
+        snprintf(snum, sizeof(snum), "%u", addr_bytes[idx]);
         s.replace(offst, _N0, snum);
       }
     }
@@ -598,7 +614,7 @@ enum : u_short
 };
 } // namespace ip
 
-#if !YASIO__HAS_NS_INLINE
+#if !YASIO__HAS_CXX11
 using namespace yasio::inet::ip;
 #endif
 
@@ -626,6 +642,13 @@ public: /// portable connect APIs
   YASIO__DECL int pserve(const char* addr, u_short port);
   YASIO__DECL int pserve(const endpoint& ep);
 
+  // open socket for proactor io
+  YASIO__DECL bool popen(int af = AF_INET, int type = SOCK_STREAM, int protocol = 0);
+  YASIO__DECL int paccept(socket_native_type& sockfd);
+
+private:
+  YASIO__DECL static void poptions(socket_native_type sockfd);
+
 public:
   // Construct a empty socket object
   YASIO__DECL xxsocket();
@@ -635,13 +658,13 @@ public:
   // Disable copy constructor
   YASIO__DECL xxsocket(const xxsocket&) = delete;
   // Construct with a exist socket, it will replace the source
-  YASIO__DECL xxsocket(xxsocket&&);
+  YASIO__DECL xxsocket(xxsocket&&) YASIO__NOEXCEPT;
 
-  YASIO__DECL xxsocket& operator=(socket_native_type handle);
+  YASIO__DECL xxsocket& operator=(socket_native_type handle) YASIO__NOEXCEPT;
   // Disable copy assign operator
   YASIO__DECL xxsocket& operator=(const xxsocket&) = delete;
   // Construct with a exist socket, it will replace the source
-  YASIO__DECL xxsocket& operator=(xxsocket&&);
+  YASIO__DECL xxsocket& operator=(xxsocket&&) YASIO__NOEXCEPT;
 
   // See also as function: open
   YASIO__DECL xxsocket(int af, int type, int protocol);
@@ -1022,6 +1045,7 @@ public:
   YASIO__DECL static bool not_recv_error(int error);
 
   YASIO__DECL static const char* strerror(int error);
+  YASIO__DECL static const char* strerror_r(int error, char* buf, size_t buflen);
   YASIO__DECL static const char* gai_strerror(int error);
 
   /// <summary>
@@ -1066,7 +1090,7 @@ public:
     const char* service         = nullptr;
     if (port > 0)
     {
-      sprintf(buffer, "%u", port); // It's enough for unsigned short, so use sprintf ok.
+      snprintf(buffer, sizeof(buffer), "%u", port);
       service = buffer;
     }
     int error = getaddrinfo(hostname, service, &hint, &answerlist);
@@ -1077,7 +1101,7 @@ public:
     {
       if (ai->ai_family == AF_INET6 || ai->ai_family == AF_INET)
       {
-        if (callback(endpoint(ai)))
+        if (callback(ai))
           break;
       }
     }
@@ -1118,28 +1142,21 @@ private:
 }; // namespace inet
 
 } // namespace inet
-#if !YASIO__HAS_NS_INLINE
+#if !YASIO__HAS_CXX11
 using namespace yasio::inet;
 #endif
 } // namespace yasio
 
 namespace std
-{ // VS2013 the operator must be at namespace std
-inline bool operator<(const yasio::inet::ip::endpoint& lhs, const yasio::inet::ip::endpoint& rhs)
-{ // apply operator < to operands
-  if (lhs.af() == AF_INET)
-    return (static_cast<uint64_t>(lhs.in4_.sin_addr.s_addr) + lhs.in4_.sin_port) < (static_cast<uint64_t>(rhs.in4_.sin_addr.s_addr) + rhs.in4_.sin_port);
-  return ::memcmp(&lhs, &rhs, sizeof(rhs)) < 0;
-}
-inline bool operator==(const yasio::inet::ip::endpoint& lhs, const yasio::inet::ip::endpoint& rhs)
-{ // apply operator == to operands
-  return !(lhs < rhs) && !(rhs < lhs);
-}
+{
+template <>
+struct hash<yasio::ip::endpoint> {
+  std::size_t operator()(const yasio::ip::endpoint& ep) const YASIO__NOEXCEPT
+  {
+    return std::hash<cxx17::string_view>()(cxx17::string_view{reinterpret_cast<const char*>(&ep), static_cast<size_t>(ep.len())});
+  }
+};
 } // namespace std
-
-#if defined(_MSC_VER)
-#  pragma warning(pop)
-#endif
 
 #if defined(YASIO_HEADER_ONLY)
 #  include "yasio/xxsocket.cpp" // lgtm [cpp/include-non-header]

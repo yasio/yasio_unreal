@@ -3,9 +3,9 @@
  Copyright (c) 2012      cocos2d-x.org
  Copyright (c) 2013-2016 Chukong Technologies Inc.
  Copyright (c) 2017-2018 Xiamen Yaji Software Co., Ltd.
- Copyright (c) 2021 Bytedance Inc.
+ Copyright (c) 2019-present Axmol Engine contributors.
 
- https://adxe.org
+ https://axmolengine.github.io/
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,8 @@
  THE SOFTWARE.
  ****************************************************************************/
 
-#ifndef __YASIO_EXT_CCHTTPCLIENT_H__
-#define __YASIO_EXT_CCHTTPCLIENT_H__
+#ifndef YASIO__EXT_HTTPCLIENT_H
+#define YASIO__EXT_HTTPCLIENT_H
 
 #include <thread>
 #include <condition_variable>
@@ -39,38 +39,38 @@
 #include "yasio_http/utils/concurrent_deque.h"
 
 #include "yasio/yasio_fwd.hpp"
-#include "yasio/cxx17/string_view.hpp"
-
+#include "yasio/string_view.hpp"
 
 /**
  * @addtogroup network
  * @{
  */
 
-namespace yasio_ext {
+namespace yasio_ext
+{
 
-namespace network {
+namespace network
+{
 /** Singleton that handles asynchronous http requests.
  *
  * Once the request completed, a callback will issued in main thread when it provided during make request.
  *
  * @lua NA
  */
-class YASIO_HTTP_API HttpClient
+class HttpClient
 {
 public:
     /**
-    * How many requests could be perform concurrency.
-    */
-    static const int MAX_CHANNELS = 21;
-    static const int MAX_REDIRECT_COUNT = 3;
+     * How many requests could be perform concurrency.
+     */
+    static const int MAX_CHANNELS       = 21;
 
     /**
      * Get instance of HttpClient.
      *
      * @return the instance of HttpClient.
      */
-    static HttpClient *getInstance();
+    static HttpClient* getInstance();
 
     /**
      * Release the instance of HttpClient.
@@ -89,21 +89,21 @@ public:
      *
      * @return the cookie filename
      */
-    const std::string& getCookieFilename();
+    cxx17::string_view getCookieFilename();
 
     /**
      * Set root certificate path for SSL verification.
      *
      * @param caFile a full path of root certificate.if it is empty, SSL verification is disabled.
      */
-    void setSSLVerification(const std::string& caFile);
+    void setSSLVerification(cxx17::string_view caFile);
 
     /**
      * Get the ssl CA filename
      *
      * @return the ssl CA filename
      */
-    const std::string& getSSLVerification();
+    cxx17::string_view getSSLVerification();
 
     /**
      * Send http request concurrently, non-blocking
@@ -115,7 +115,7 @@ public:
      *   b. You can specific content-type at custom header, such as:
      *      std::vector<std::string> headers = {"Content-Type: application/json;charset=UTF-8"};
      *      request->setHeaders(headers);
-     *   c. other content type, please see: 
+     *   c. other content type, please see:
      *      https://stackoverflow.com/questions/23714383/what-are-all-the-possible-values-for-http-content-type-header
      */
     bool send(HttpRequest* request);
@@ -154,34 +154,34 @@ public:
      */
     int getTimeoutForRead();
 
-    HttpCookie* getCookie() const {return _cookie; }
+    HttpCookie* getCookie() const { return _cookie; }
 
-    std::recursive_mutex& getCookieFileMutex() {return _cookieFileMutex;}
+    std::recursive_mutex& getCookieFileMutex() { return _cookieFileMutex; }
 
-    std::recursive_mutex& getSSLCaFileMutex() {return _sslCaFileMutex;}
-    
+    std::recursive_mutex& getSSLCaFileMutex() { return _sslCaFileMutex; }
+
     typedef std::function<bool(HttpResponse*)> ClearResponsePredicate;
 
     /**
      * Clears the pending & finished http response
      */
-    void clearResponseQueue(); 
+    void clearResponseQueue();
 
     /**
      * Clears the pending http response
      */
-    void clearPendingResponseQueue(); 
+    void clearPendingResponseQueue();
 
     /**
      * Clears the finished http response
      */
-    void clearFinishedResponseQueue(); 
+    void clearFinishedResponseQueue();
 
     /**
      Sets a predicate function that is going to be called to determine if we proceed
     * each of the pending requests
     *
-    * @param cb predicate function that will be called 
+    * @param cb predicate function that will be called
     */
     void setClearResponsePredicate(ClearResponsePredicate predicate) { _clearResponsePredicate = predicate; }
 
@@ -189,23 +189,23 @@ public:
     bool isDispatchOnWorkThread() const { return _dispatchOnWorkThread; }
 
     /*
-    * When the device network status chagned, you should invoke this function
-    */
+     * When the device network status chagned, you should invoke this function
+     */
     void handleNetworkStatusChanged();
 
     /*
-    * Sets custom dns server list:
-    * format: "xxx.xxx.xxx.xxx[:port],xxx.xxx.xxx.xxx[:port]
-    */
-    void setNameServers(const std::string& servers);
+     * Sets custom dns server list:
+     * format: "xxx.xxx.xxx.xxx[:port],xxx.xxx.xxx.xxx[:port]
+     */
+    void setNameServers(cxx17::string_view servers);
 
     yasio::io_service* getInternalService();
-    
+
     /*
-    * If setDispatchOnWorkThread(false), you needs to invoke this API to dispatch http response
-    * on the caller thread
-    */
-    void tick();
+     * If setDispatchOnWorkThread(false), you needs to invoke this API to dispatch http response
+     * on the caller thread
+     */
+    void dispatch();
 
     /*
      * The urlEncode API
@@ -215,20 +215,18 @@ public:
     static std::string urlEncode(cxx17::string_view s);
 
     static std::string urlDecode(cxx17::string_view st);
-        
+
 private:
     HttpClient();
     virtual ~HttpClient();
 
-    void processResponse(HttpResponse* response, const std::string& url);
+    void processResponse(HttpResponse* response, int channelIndex);
 
     int tryTakeAvailChannel();
 
     void handleNetworkEvent(yasio::io_event* event);
 
     void handleNetworkEOF(HttpResponse* response, yasio::io_channel* channel, int internalErrorCode);
-
-    void dispatchResponseCallbacks();
 
     void finishResponse(HttpResponse* response);
 
@@ -238,7 +236,7 @@ private:
     bool _isInited;
 
     yasio::io_service* _service;
-    
+
     bool _dispatchOnWorkThread;
 
     int _timeoutForConnect;
@@ -246,8 +244,6 @@ private:
 
     int _timeoutForRead;
     std::recursive_mutex _timeoutForReadMutex;
-
-    std::recursive_mutex _schedulerMutex;
 
     concurrent_deque<HttpResponse*> _pendingResponseQueue;
     concurrent_deque<HttpResponse*> _finishedResponseQueue;
@@ -265,12 +261,11 @@ private:
     ClearResponsePredicate _clearResponsePredicate;
 };
 
-} // namespace network
+}  // namespace network
 
-}
+}  // namespace yasio_ext
 
 // end group
 /// @}
 
-#endif //__CCHTTPCLIENT_H__
-
+#endif  //__CCHTTPCLIENT_H__
